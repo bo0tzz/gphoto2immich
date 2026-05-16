@@ -9,6 +9,8 @@ mod camera;
 mod config;
 mod immich;
 mod job;
+mod pipeline;
+mod stack_tracker;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -21,6 +23,7 @@ fn main() -> Result<()> {
         camera = %cfg.camera_ip,
         immich = %cfg.immich_url,
         tz = %cfg.camera_tz,
+        stack = cfg.stack_jpeg_raf,
         "fujimmich starting"
     );
 
@@ -29,7 +32,6 @@ fn main() -> Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-
     rt.block_on(async move { run(cfg).await })
 }
 
@@ -37,35 +39,38 @@ async fn run(cfg: config::Config) -> Result<()> {
     let shutdown = Arc::new(AtomicBool::new(false));
     install_signal_handler(shutdown.clone());
 
-    let (tx, mut rx) = mpsc::channel::<camera::PendingPhoto>(64);
+    let immich = Arc::new(immich::ImmichClient::new(&cfg.immich_url, &cfg.immich_api_key)?);
+    let pipeline = pipeline::Pipeline::new(immich.clone(), &cfg);
+
+    let (tx, rx) = mpsc::channel::<job::PipelineMessage>(64);
+
+    // Spawn the upload pipeline.
+    let pipeline_handle = tokio::spawn(pipeline.run(rx));
 
     // Camera thread: blocking libfuji calls, owns the PtpRuntime.
+    let camera_deps = camera::CameraDeps {
+        config: cfg.clone(),
+        immich,
+        tokio: tokio::runtime::Handle::current(),
+    };
     let camera_shutdown = shutdown.clone();
-    let camera_cfg = cfg.clone();
     let camera_thread = std::thread::Builder::new()
         .name("fujimmich-camera".into())
         .spawn(move || {
-            if let Err(e) = camera::run(camera_cfg, tx, camera_shutdown) {
+            if let Err(e) = camera::run(camera_deps, tx, camera_shutdown) {
                 tracing::error!(error = %e, "camera thread failed");
             }
         })?;
 
-    // Phase 3 consumer: just log each candidate photo. Phase 5 replaces this
-    // with the Immich-dedup → download → upload → stack pipeline.
-    while let Some(pending) = rx.recv().await {
-        tracing::info!(
-            handle = pending.handle,
-            filename = %pending.info.filename,
-            size = pending.info.compressed_size,
-            taken_at = %pending.info.date_created_utc,
-            kind = ?pending.info.kind,
-            "candidate photo"
-        );
-    }
-
+    // Wait for the camera thread to drop its sender, then the pipeline
+    // drains.
     if let Err(e) = camera_thread.join() {
         tracing::error!("camera thread join panicked: {e:?}");
     }
+    if let Err(e) = pipeline_handle.await {
+        tracing::error!("pipeline task panicked: {e:?}");
+    }
+
     Ok(())
 }
 
