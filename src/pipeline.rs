@@ -41,7 +41,7 @@ impl Pipeline {
             let pipeline = self.clone();
             tasks.spawn(async move {
                 if let Err(e) = pipeline.handle(msg).await {
-                    error!(error = %e, "pipeline message failed");
+                    error!(error = ?e, "pipeline message failed");
                 }
             });
         }
@@ -125,7 +125,7 @@ impl Pipeline {
                     .await
                 {
                     Ok(()) => info!(jpeg_id, raf_id, "stack created"),
-                    Err(e) => warn!(error = %e, jpeg_id, raf_id, "stack create failed"),
+                    Err(e) => warn!(error = ?e, jpeg_id, raf_id, "stack create failed"),
                 }
                 Ok(())
             }

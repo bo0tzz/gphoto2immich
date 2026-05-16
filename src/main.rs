@@ -50,7 +50,7 @@ async fn run(cfg: config::Config) -> Result<()> {
     let camera_shutdown = shutdown.clone();
     let camera_handle = tokio::spawn(async move {
         if let Err(e) = camera::run(camera_deps, tx, camera_shutdown).await {
-            tracing::error!(error = %e, "camera task failed");
+            tracing::error!(error = ?e, "camera task failed");
         }
     });
 

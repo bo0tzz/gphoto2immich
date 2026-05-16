@@ -21,6 +21,7 @@ mod session;
 pub use object_info::{AssetKind, ObjectInfo};
 
 const DETECT_POLL_INTERVAL: Duration = Duration::from_secs(3);
+const SESSION_ERROR_BACKOFF: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct CameraDeps {
@@ -41,7 +42,7 @@ pub async fn run(
         let descriptors: Vec<_> = match ctx.list_cameras().await {
             Ok(iter) => iter.collect(),
             Err(e) => {
-                warn!(error = %e, "list_cameras failed");
+                warn!(error = ?e, "list_cameras failed");
                 tokio::time::sleep(DETECT_POLL_INTERVAL).await;
                 continue;
             }
@@ -60,7 +61,7 @@ pub async fn run(
         let camera = match ctx.get_camera(&descriptor).await {
             Ok(c) => c,
             Err(e) => {
-                warn!(error = %e, "failed to open camera");
+                warn!(error = ?e, "failed to open camera");
                 tokio::time::sleep(DETECT_POLL_INTERVAL).await;
                 continue;
             }
@@ -68,9 +69,16 @@ pub async fn run(
 
         match session::run(&deps, &tx, &ctx, &camera, &shutdown).await {
             Ok(()) => info!("camera session ended cleanly"),
-            Err(e) => warn!(error = %e, "camera session ended with error"),
+            Err(e) => {
+                warn!(error = ?e, "camera session ended with error");
+                drop(camera);
+                // Sleep so we don't hot-loop reopening the same camera when
+                // the error is something that won't fix itself in <1s
+                // (auth failure to Immich, busy device, etc.).
+                tokio::time::sleep(SESSION_ERROR_BACKOFF).await;
+                continue;
+            }
         }
-        // Drop the camera handle; loop back to detection.
         drop(camera);
     }
 

@@ -39,7 +39,7 @@ pub async fn run(
                 let name = path.name().into_owned();
                 info!(folder = %folder, name = %name, "new file event");
                 if let Err(e) = process_file(deps, tx, ctx, camera, &folder, &name).await {
-                    warn!(folder = %folder, name = %name, error = %e, "process_file failed");
+                    warn!(folder = %folder, name = %name, error = ?e, "process_file failed");
                 }
             }
             CameraEvent::Timeout => {}
@@ -77,14 +77,14 @@ async fn backfill(
                 if let Err(e) =
                     process_one_with_info(deps, tx, ctx, camera, &folder, &name, info).await
                 {
-                    warn!(folder = %folder, name = %name, error = %e, "process_one failed");
+                    warn!(folder = %folder, name = %name, error = ?e, "process_one failed");
                 }
             }
             Ok(None) => {
                 debug!(folder = %folder, name = %name, "before cutoff, skipping");
             }
             Err(e) => {
-                warn!(folder = %folder, name = %name, error = %e, "info failed");
+                warn!(folder = %folder, name = %name, error = ?e, "info failed");
             }
         }
     }
@@ -103,7 +103,7 @@ async fn enumerate_files(camera: &Camera) -> Result<Vec<(String, String)>> {
                     stack.push(join_path(&folder, &sub));
                 }
             }
-            Err(e) => warn!(folder = %folder, error = %e, "list_folders failed"),
+            Err(e) => warn!(folder = %folder, error = ?e, "list_folders failed"),
         }
         match fs.list_files(&folder).await {
             Ok(files) => {
@@ -111,7 +111,7 @@ async fn enumerate_files(camera: &Camera) -> Result<Vec<(String, String)>> {
                     out.push((folder.clone(), name));
                 }
             }
-            Err(e) => warn!(folder = %folder, error = %e, "list_files failed"),
+            Err(e) => warn!(folder = %folder, error = ?e, "list_files failed"),
         }
     }
     Ok(out)
@@ -228,7 +228,7 @@ async fn process_one_with_info(
 
 async fn emit(tx: &mpsc::Sender<PipelineMessage>, msg: PipelineMessage) {
     if let Err(e) = tx.send(msg).await {
-        warn!(error = %e, "failed to enqueue pipeline message (receiver gone)");
+        warn!(error = ?e, "failed to enqueue pipeline message (receiver gone)");
     }
 }
 
