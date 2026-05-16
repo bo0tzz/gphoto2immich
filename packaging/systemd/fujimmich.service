@@ -1,0 +1,36 @@
+[Unit]
+Description=Fujimmich — auto-sync Fujifilm cameras to Immich
+Documentation=https://github.com/bo0tzz/fujimmich
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Config (IMMICH_URL, IMMICH_API_KEY, FUJI_TZ, optional STACK_JPEG_RAF,
+# LOG_LEVEL) is loaded from a per-user env file. Drop it at
+# ~/.config/fujimmich/env, mode 0600 — the API key is sensitive.
+EnvironmentFile=%h/.config/fujimmich/env
+ExecStart=/usr/bin/fujimmich
+
+# Restart on libgphoto2/IO errors but back off so we don't hammer USB
+# when the camera is in a bad state.
+Restart=on-failure
+RestartSec=10s
+
+# Hardening — daemon only needs network out, the camera over USB, and
+# the user's tempdir.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target
