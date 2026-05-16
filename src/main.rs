@@ -7,6 +7,7 @@ use tracing_subscriber::EnvFilter;
 
 mod camera;
 mod config;
+mod immich;
 mod job;
 
 fn main() -> Result<()> {
