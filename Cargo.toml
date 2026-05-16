@@ -4,14 +4,9 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
-[features]
-default = []
-vcam-test = []
-
 [dependencies]
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
-chrono-tz = "0.10"
 hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
 serde = { version = "1", features = ["derive"] }
@@ -23,11 +18,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "signa
 tokio-util = { version = "0.7", features = ["io"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-[build-dependencies]
-bindgen = "0.71"
-cmake = "0.1"
-pkg-config = "0.3"
 
 [dev-dependencies]
 wiremock = "0.6"

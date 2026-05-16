@@ -20,14 +20,10 @@ fn main() -> Result<()> {
     let cfg = config::Config::from_env()?;
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
-        camera = %cfg.camera_ip,
         immich = %cfg.immich_url,
-        tz = %cfg.camera_tz,
         stack = cfg.stack_jpeg_raf,
         "fujimmich starting"
     );
-
-    camera::set_client_name(&cfg.client_name);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -42,35 +38,15 @@ async fn run(cfg: config::Config) -> Result<()> {
     let immich = Arc::new(immich::ImmichClient::new(&cfg.immich_url, &cfg.immich_api_key)?);
     let pipeline = pipeline::Pipeline::new(immich.clone(), &cfg);
 
-    let (tx, rx) = mpsc::channel::<job::PipelineMessage>(64);
+    let (_tx, rx) = mpsc::channel::<job::PipelineMessage>(64);
 
-    // Spawn the upload pipeline.
+    // libgphoto2 side is wired up in the next commit. For now the daemon
+    // just spins the pipeline (which drains immediately) so the binary
+    // builds and exits cleanly.
     let pipeline_handle = tokio::spawn(pipeline.run(rx));
+    pipeline_handle.await.ok();
 
-    // Camera thread: blocking libfuji calls, owns the PtpRuntime.
-    let camera_deps = camera::CameraDeps {
-        config: cfg.clone(),
-        immich,
-        tokio: tokio::runtime::Handle::current(),
-    };
-    let camera_shutdown = shutdown.clone();
-    let camera_thread = std::thread::Builder::new()
-        .name("fujimmich-camera".into())
-        .spawn(move || {
-            if let Err(e) = camera::run(camera_deps, tx, camera_shutdown) {
-                tracing::error!(error = %e, "camera thread failed");
-            }
-        })?;
-
-    // Wait for the camera thread to drop its sender, then the pipeline
-    // drains.
-    if let Err(e) = camera_thread.join() {
-        tracing::error!("camera thread join panicked: {e:?}");
-    }
-    if let Err(e) = pipeline_handle.await {
-        tracing::error!("pipeline task panicked: {e:?}");
-    }
-
+    let _ = shutdown.load(Ordering::Relaxed);
     Ok(())
 }
 
