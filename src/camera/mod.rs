@@ -13,6 +13,7 @@ use tracing::{debug, info, warn};
 use crate::config::Config;
 use crate::immich::ImmichClient;
 use crate::job::PipelineMessage;
+use crate::notifications::{self, SyncStats};
 
 mod gphoto;
 pub mod object_info;
@@ -27,6 +28,7 @@ const SESSION_ERROR_BACKOFF: Duration = Duration::from_secs(5);
 pub struct CameraDeps {
     pub config: Config,
     pub immich: Arc<ImmichClient>,
+    pub stats: SyncStats,
 }
 
 /// Run forever, polling libgphoto2 for a connected camera and driving a
@@ -67,19 +69,17 @@ pub async fn run(
             }
         };
 
-        match session::run(&deps, &tx, &ctx, &camera, &shutdown).await {
+        notifications::notify_session_start(&descriptor.model);
+        let session_result = session::run(&deps, &tx, &ctx, &camera, &shutdown).await;
+        notifications::notify_session_end(deps.stats.take_count());
+        drop(camera);
+        match session_result {
             Ok(()) => info!("camera session ended cleanly"),
             Err(e) => {
                 warn!(error = ?e, "camera session ended with error");
-                drop(camera);
-                // Sleep so we don't hot-loop reopening the same camera when
-                // the error is something that won't fix itself in <1s
-                // (auth failure to Immich, busy device, etc.).
                 tokio::time::sleep(SESSION_ERROR_BACKOFF).await;
-                continue;
             }
         }
-        drop(camera);
     }
 
     info!("camera task exiting");

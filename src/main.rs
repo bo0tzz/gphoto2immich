@@ -9,6 +9,7 @@ mod camera;
 mod config;
 mod immich;
 mod job;
+mod notifications;
 mod pipeline;
 mod stack_tracker;
 
@@ -37,7 +38,8 @@ async fn run(cfg: config::Config) -> Result<()> {
     install_signal_handler(shutdown.clone());
 
     let immich = Arc::new(immich::ImmichClient::new(&cfg.immich_url, &cfg.immich_api_key)?);
-    let pipeline = pipeline::Pipeline::new(immich.clone(), &cfg);
+    let stats = notifications::SyncStats::new();
+    let pipeline = pipeline::Pipeline::new(immich.clone(), &cfg, stats.clone());
 
     let (tx, rx) = mpsc::channel::<job::PipelineMessage>(64);
 
@@ -46,6 +48,7 @@ async fn run(cfg: config::Config) -> Result<()> {
     let camera_deps = camera::CameraDeps {
         config: cfg.clone(),
         immich,
+        stats,
     };
     let camera_shutdown = shutdown.clone();
     let camera_handle = tokio::spawn(async move {
