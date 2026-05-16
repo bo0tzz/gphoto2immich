@@ -21,6 +21,7 @@ fn main() -> Result<()> {
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         immich = %cfg.immich_url,
+        tz = %cfg.camera_tz,
         stack = cfg.stack_jpeg_raf,
         "fujimmich starting"
     );
@@ -38,15 +39,27 @@ async fn run(cfg: config::Config) -> Result<()> {
     let immich = Arc::new(immich::ImmichClient::new(&cfg.immich_url, &cfg.immich_api_key)?);
     let pipeline = pipeline::Pipeline::new(immich.clone(), &cfg);
 
-    let (_tx, rx) = mpsc::channel::<job::PipelineMessage>(64);
+    let (tx, rx) = mpsc::channel::<job::PipelineMessage>(64);
 
-    // libgphoto2 side is wired up in the next commit. For now the daemon
-    // just spins the pipeline (which drains immediately) so the binary
-    // builds and exits cleanly.
     let pipeline_handle = tokio::spawn(pipeline.run(rx));
-    pipeline_handle.await.ok();
 
-    let _ = shutdown.load(Ordering::Relaxed);
+    let camera_deps = camera::CameraDeps {
+        config: cfg.clone(),
+        immich,
+    };
+    let camera_shutdown = shutdown.clone();
+    let camera_handle = tokio::spawn(async move {
+        if let Err(e) = camera::run(camera_deps, tx, camera_shutdown).await {
+            tracing::error!(error = %e, "camera task failed");
+        }
+    });
+
+    if let Err(e) = camera_handle.await {
+        tracing::error!("camera task panicked: {e:?}");
+    }
+    if let Err(e) = pipeline_handle.await {
+        tracing::error!("pipeline task panicked: {e:?}");
+    }
     Ok(())
 }
 
