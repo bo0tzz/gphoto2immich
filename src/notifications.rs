@@ -65,7 +65,7 @@ pub fn notify_session_end(uploaded: u32) {
 pub fn notify_session_failure(error_summary: &str) {
     let mut body = String::from("Sync failed. Check the log for details.");
     if !error_summary.is_empty() {
-        body.push_str("\n");
+        body.push('\n');
         // Keep the popup compact: the full chain is in the log.
         body.push_str(&truncate(error_summary, 200));
     }

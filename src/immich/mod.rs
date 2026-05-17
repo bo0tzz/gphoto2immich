@@ -9,10 +9,12 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
 use reqwest::{header, Client, Url};
 
+pub mod cache;
 pub mod search;
 pub mod stack;
 pub mod upload;
 
+pub use cache::ImmichCache;
 pub use upload::{UploadOutcome, UploadRequest, UploadResult};
 
 #[derive(Clone)]

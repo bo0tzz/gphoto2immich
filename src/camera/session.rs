@@ -1,5 +1,6 @@
-//! One connected camera session: enumerate the filesystem (backfill),
-//! then watch for `NewFile` events for the rest of the session.
+//! One connected camera session: enumerate the camera filesystem,
+//! compare against an Immich cache built up front, and download +
+//! enqueue anything missing. Returns once the walk is complete.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use tracing::{debug, info, trace, warn};
 use super::gphoto::{digest_info, spool_to_tempfile};
 use super::object_info::{AssetKind, ObjectInfo};
 use super::CameraDeps;
+use crate::immich::ImmichCache;
 use crate::job::{PipelineMessage, UploadJob};
 
 const BACKFILL_SLOP: chrono::Duration = chrono::Duration::hours(1);
@@ -22,10 +24,11 @@ const BACKFILL_SLOP: chrono::Duration = chrono::Duration::hours(1);
 /// we'd otherwise log hundreds of warnings before giving up.
 const MAX_CONSECUTIVE_FAILURES: u32 = 3;
 
-/// One sync of one camera: run a backfill against the current filesystem
-/// state, then return. The camera is left untouched on the card; the
-/// outer loop in `camera::run` parks until the camera is unplugged before
-/// it would even consider another session against the same port.
+/// One sync of one camera: build a fresh Immich cache, walk the camera
+/// filesystem against it, and return. The camera is left untouched on
+/// the card; the outer loop in `camera::run` parks until the camera is
+/// unplugged before it would consider another session against the same
+/// port.
 pub async fn run(
     deps: &CameraDeps,
     tx: &mpsc::Sender<PipelineMessage>,
@@ -33,20 +36,18 @@ pub async fn run(
     camera: &Camera,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<()> {
-    let cutoff = compute_cutoff(deps).await?;
-    info!(cutoff = ?cutoff, "starting backfill");
-    backfill(deps, tx, ctx, camera, cutoff, shutdown).await?;
+    let cache = ImmichCache::load(&deps.immich)
+        .await
+        .context("loading Immich asset cache")?;
+    let cutoff = cache.max_taken_at().map(|t| t - BACKFILL_SLOP);
+    info!(
+        cached_assets = cache.asset_count(),
+        cutoff = ?cutoff,
+        "starting backfill"
+    );
+    backfill(deps, tx, ctx, camera, &cache, cutoff, shutdown).await?;
     info!("backfill complete");
     Ok(())
-}
-
-async fn compute_cutoff(deps: &CameraDeps) -> Result<Option<DateTime<Utc>>> {
-    let newest = deps
-        .immich
-        .most_recent_taken_at(None)
-        .await
-        .context("looking up most-recent Immich asset for backfill cutoff")?;
-    Ok(newest.map(|t| t - BACKFILL_SLOP))
 }
 
 #[derive(Debug, Default)]
@@ -65,6 +66,7 @@ async fn backfill(
     tx: &mpsc::Sender<PipelineMessage>,
     ctx: &Context,
     camera: &Camera,
+    cache: &ImmichCache,
     cutoff: Option<DateTime<Utc>>,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<()> {
@@ -87,7 +89,7 @@ async fn backfill(
         let result = match prefetch_and_filter(camera, &folder, &name, deps, cutoff).await {
             Ok(Some(info)) => {
                 let outcome =
-                    process_one_with_info(deps, tx, ctx, camera, &folder, &name, info).await;
+                    process_one_with_info(deps, tx, ctx, camera, cache, &folder, &name, info).await;
                 if let Ok(o) = &outcome {
                     match o {
                         FileOutcome::Downloaded => stats.downloaded += 1,
@@ -203,25 +205,21 @@ enum FileOutcome {
     AlreadyInImmich,
 }
 
+#[allow(clippy::too_many_arguments)] // session-wide context is genuinely needed here
 async fn process_one_with_info(
     deps: &CameraDeps,
     tx: &mpsc::Sender<PipelineMessage>,
     ctx: &Context,
     camera: &Camera,
+    cache: &ImmichCache,
     folder: &str,
     name: &str,
     info: ObjectInfo,
 ) -> Result<FileOutcome> {
-    let existing = deps
-        .immich
-        .find_existing(&info.filename, info.date_created_utc)
-        .await
-        .context("dedup pre-check")?;
-
-    if let Some(existing) = existing {
+    if let Some(existing_id) = cache.find_existing(&info.filename, info.date_created_utc) {
         debug!(
             filename = %info.filename,
-            asset_id = %existing.id,
+            asset_id = %existing_id,
             "already in Immich, skipping download"
         );
         emit(
@@ -229,7 +227,7 @@ async fn process_one_with_info(
             PipelineMessage::KnownAsset {
                 basename: info.basename().to_owned(),
                 kind: info.kind,
-                asset_id: existing.id,
+                asset_id: existing_id.to_owned(),
             },
         )
         .await;
