@@ -5,10 +5,12 @@ auto-uploads new photos into an [Immich][] instance. JPEG+RAF pairs are
 stacked. Deduplication uses Immich's metadata search — no local database.
 
 Single-camera, single-Immich. Built around [libgphoto2][], so in principle
-it should work for any camera libgphoto2 supports; it's been built and
-shaped against a Fujifilm X-T3 and bakes in some Fuji-isms (the dedup
-search filters by `make=FUJIFILM`, the stack logic is JPEG+RAF). Adapting
-to another body that ships RAW+JPEG pairs is a small change.
+it should work for any camera libgphoto2 supports. The camera's EXIF
+`Make` tag is auto-detected at session start (so the Immich dedup scope
+isn't hardcoded), but the stacking logic is still JPEG+RAF-shaped —
+fine on Fuji bodies, would need a small tweak on Canon/Nikon/etc. for
+their CR2/NEF flavour of RAW+JPEG. It's been shaped against a Fujifilm
+X-T3.
 
 [Immich]: https://immich.app
 [libgphoto2]: http://gphoto.org/proj/libgphoto2/
@@ -16,20 +18,27 @@ to another body that ships RAW+JPEG pairs is a small change.
 ## How it works
 
 1. Polls libgphoto2 every few seconds for a connected camera.
-2. When one is detected:
-   - Asks Immich for the most recent uploaded asset and uses its capture
-     time (minus 1h slop) as a cutoff for the initial backfill.
-   - Walks the camera's filesystem; for every file newer than the cutoff,
-     does a metadata pre-check against Immich (`originalFileName` + ±2 min
-     window). If it's already known, records the existing asset id for
-     stacking and skips the download.
-   - Otherwise downloads it, hashes it on the fly, and POSTs to
-     `/api/assets` with the `x-immich-checksum` header so Immich can
-     short-circuit duplicates server-side.
-3. Sits on libgphoto2's `wait_event` for the remainder of the session and
-   processes `NewFile` events as you shoot.
-4. JPEG+RAF pairs (same basename, both seen during the session — fresh or
-   pre-existing) get stacked via `/api/stacks`. The JPEG is the primary.
+2. When one is detected, runs a single sync sweep:
+   - Enumerates the camera's filesystem (`/store_*/DCIM/...`).
+   - Reads the EXIF `Make` tag from the first JPEG on the card via
+     `download_exif` (~65 KB, in-memory) so the Immich query can scope
+     to one manufacturer.
+   - Builds a per-session in-memory snapshot of all matching Immich
+     assets in one paginated search. This replaces what would otherwise
+     be N HTTP requests during the per-file pre-check.
+   - Cutoff for the backfill is the newest asset in the snapshot minus
+     1h slop. Files older than that are skipped (assumed already
+     uploaded).
+   - For each remaining file: HashMap lookup against the snapshot
+     (filename + ±24h `fileCreatedAt` window). If found, records the
+     existing asset id for stacking and skips the download. Otherwise
+     downloads, hashes, and POSTs to `/api/assets` with
+     `x-immich-checksum` so Immich also dedups server-side.
+3. JPEG+RAF pairs (same basename, both seen during the session — fresh
+   or pre-existing) get stacked via `/api/stacks`. The JPEG is primary.
+4. Session ends once the walk completes. Daemon waits for the camera to
+   be unplugged before considering another sync against the same port —
+   no event-loop watching for shutter presses while tethered.
 
 ## Requirements
 
@@ -57,10 +66,11 @@ TZ=Europe/Amsterdam \
 cargo run --release
 ```
 
-The daemon prints what it's doing to stderr. When a camera comes up you
-should see a `camera detected model=...` line; after the initial walk it
-enters the event-driven mode where each shutter press triggers a NewFile
-event and a sync.
+The daemon prints what it's doing to stderr. When a camera comes up
+you should see `camera detected model=...` followed by
+`detected camera EXIF make make=...`, then the backfill summary
+line at the end. Unplug the camera (or stop the daemon) when done — it
+doesn't watch for shutter presses while tethered.
 
 ## Camera-side caveats
 
@@ -130,22 +140,39 @@ file at `~/.config/gphoto2immich/env`.
 
 ## Notifications
 
-Two notifications per session: one when the camera is detected ("Syncing
-&lt;model&gt; → Immich"), one at session end with the count of newly-uploaded
-assets (suppressed if zero). Nothing per file — the log is the source of
-truth for per-file detail. Notifications are best-effort: if D-Bus isn't
-available, the daemon logs the failure at debug level and keeps running.
+Three desktop notification types via libnotify:
+
+- **Camera connected** — fires once when a camera is detected.
+- **Sync complete** — at session end, with the count of newly-uploaded
+  assets. Suppressed if zero (the connect popup already told you
+  something happened).
+- **Sync failed** — when a session ends in error, with a truncated
+  error chain in the body.
+
+Notifications are deduped per plug-in cycle: if a session keeps failing
+and retrying every few seconds (e.g. Immich unreachable), you get one
+"Camera connected" + one "Sync failed" popup, not one per retry. The
+flags reset when the camera unplugs.
+
+Nothing per file — the log is the source of truth for per-file detail.
+Notifications are best-effort: if D-Bus isn't available, the daemon
+logs the failure at debug level and keeps running.
 
 ## Development
 
 ```sh
-cargo test          # 34 unit tests, mostly Immich client + stack tracker
+cargo test          # unit tests, mostly Immich client + cache + stack tracker
 cargo run           # against your real camera; needs the env vars above
+cargo clippy --all-targets --no-deps -- -D warnings
+cargo fmt --all -- --check
 ```
 
-There's no integration test against a real camera (or vcam — there isn't
-a libgphoto2 equivalent that's easy to wire up). The Immich client is
-covered by [wiremock][] tests; the rest needs hardware.
+GitHub Actions runs all four on every push and PR — see
+`.github/workflows/ci.yml`.
+
+There's no integration test against a real camera (or vcam — there
+isn't a libgphoto2 equivalent that's easy to wire up). The Immich
+client is covered by [wiremock][] tests; the rest needs hardware.
 
 [wiremock]: https://crates.io/crates/wiremock
 
@@ -153,7 +180,7 @@ covered by [wiremock][] tests; the rest needs hardware.
 
 ### Cutoff and re-uploading deleted assets
 
-The backfill skips any file on the card older than `most_recent_immich_fuji_asset.fileCreatedAt − 1h`. That's a one-line optimisation that keeps every reconnect from doing N HTTP requests, but it has a sharp edge:
+The backfill skips any file on the card older than `most_recent_immich_asset_of_the_same_make.fileCreatedAt − 1h`. That's a one-line optimisation that keeps the backfill linear in the diff between card and Immich, not in card size — but it has a sharp edge:
 
 > If you delete a file from Immich and want it re-uploaded, the cutoff will skip it unless every Immich asset newer than it is also gone.
 
@@ -161,10 +188,10 @@ In practice this means deleting one or two recent files from the UI and re-plugg
 
 ### What it intentionally doesn't do
 
-- Network/Wi-Fi sync. The X-T3 (and other older Fuji bodies) need proprietary BLE wake to bring up their AP, which isn't worth implementing for v1. USB only.
+- Network/Wi-Fi sync. USB only.
 - Multi-camera support. Single body, single instance.
-- Local SQLite / state cache. Dedup goes to Immich every time.
-- Push notifications when the camera is absent. The daemon just waits.
+- Local SQLite / state cache. The Immich-side snapshot is rebuilt from scratch each session.
+- Watching for new shots while the camera is tethered. The daemon does one sync sweep on plug-in, then waits for unplug before considering another. If you want a continuously-watching workflow, unplug + replug after each shot, or just rely on libgphoto2's auto-detect being fast (~3s).
 - **Delete from the camera after upload. Photos stay on the card** — deliberate. The card is your backup until you decide it isn't. Format when you're ready.
 
 ## License
