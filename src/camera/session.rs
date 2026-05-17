@@ -11,7 +11,7 @@ use gphoto2::{Camera, Context};
 use tokio::sync::mpsc;
 use tracing::{debug, info, trace, warn};
 
-use super::gphoto::{digest_info, spool_to_tempfile};
+use super::gphoto::{detect_camera_make, digest_info, spool_to_tempfile};
 use super::object_info::{AssetKind, ObjectInfo};
 use super::CameraDeps;
 use crate::immich::ImmichCache;
@@ -36,7 +36,18 @@ pub async fn run(
     camera: &Camera,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<()> {
-    let cache = ImmichCache::load(&deps.immich)
+    let files = enumerate_files(camera).await?;
+    info!(count = files.len(), "enumerated files on camera");
+
+    let make = detect_camera_make(camera, ctx, &files).await;
+    match &make {
+        Some(m) => info!(make = %m, "detected camera EXIF make"),
+        None => warn!(
+            "could not detect camera EXIF make; caching all Immich assets (slower for large libraries)"
+        ),
+    }
+
+    let cache = ImmichCache::load(&deps.immich, make.as_deref())
         .await
         .context("loading Immich asset cache")?;
     let cutoff = cache.max_taken_at().map(|t| t - BACKFILL_SLOP);
@@ -45,7 +56,7 @@ pub async fn run(
         cutoff = ?cutoff,
         "starting backfill"
     );
-    backfill(deps, tx, ctx, camera, &cache, cutoff, shutdown).await?;
+    backfill(deps, tx, ctx, camera, &cache, cutoff, files, shutdown).await?;
     info!("backfill complete");
     Ok(())
 }
@@ -61,6 +72,7 @@ struct BackfillStats {
     aborted_early: bool,
 }
 
+#[allow(clippy::too_many_arguments)] // session-wide context is genuinely needed here
 async fn backfill(
     deps: &CameraDeps,
     tx: &mpsc::Sender<PipelineMessage>,
@@ -68,16 +80,15 @@ async fn backfill(
     camera: &Camera,
     cache: &ImmichCache,
     cutoff: Option<DateTime<Utc>>,
+    files: Vec<(String, String)>,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<()> {
-    let all = enumerate_files(camera).await?;
     let mut stats = BackfillStats {
-        total_files: all.len(),
+        total_files: files.len(),
         ..Default::default()
     };
-    info!(count = stats.total_files, "enumerated files on camera");
     let mut consecutive_failures: u32 = 0;
-    for (folder, name) in all {
+    for (folder, name) in files {
         if shutdown.load(Ordering::Relaxed) {
             break;
         }

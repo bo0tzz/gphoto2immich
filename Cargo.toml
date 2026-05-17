@@ -11,6 +11,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 chrono-tz = "0.10"
 gphoto2 = "3"
 hex = "0.4"
+kamadak-exif = "0.6"
 libc = "0.2"
 notify-rust = "4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }

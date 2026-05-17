@@ -46,19 +46,20 @@ pub struct AssetSummary {
 }
 
 impl ImmichClient {
-    /// Fetch one page of metadata search results filtered by camera make,
-    /// ordered desc by `fileCreatedAt` so the newest asset is first on
-    /// page 1. Used by [`super::cache::ImmichCache::load`] to enumerate
-    /// every Fuji asset Immich has, once per session, instead of running
-    /// one HTTP request per file on the camera.
-    pub(super) async fn list_by_make_page(
+    /// Fetch one page of metadata search results, optionally scoped to
+    /// a single EXIF `Make`, ordered desc by `fileCreatedAt` so the
+    /// newest asset is first on page 1. Used by
+    /// [`super::cache::ImmichCache::load`] to enumerate all relevant
+    /// assets once per session instead of running one HTTP request per
+    /// file on the camera.
+    pub(super) async fn list_metadata_page(
         &self,
-        make: &str,
+        make: Option<&str>,
         page: u32,
         size: u32,
     ) -> Result<AssetsPage> {
         let body = MetadataSearchBody {
-            make: Some(make),
+            make,
             order: Some("desc"),
             page,
             size,
@@ -91,7 +92,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_by_make_page_sends_expected_body() {
+    async fn list_metadata_page_sends_expected_body() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/search/metadata"))
@@ -116,14 +117,39 @@ mod tests {
             .await;
 
         let client = make_client(&server);
-        let page = client.list_by_make_page("FUJIFILM", 1, 250).await.unwrap();
+        let page = client
+            .list_metadata_page(Some("FUJIFILM"), 1, 250)
+            .await
+            .unwrap();
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].id, "a");
         assert!(page.next_page.is_none());
     }
 
     #[tokio::test]
-    async fn list_by_make_page_surfaces_server_error() {
+    async fn list_metadata_page_omits_make_when_none() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/search/metadata"))
+            // No `make` field in the body.
+            .and(wiremock::matchers::body_json(json!({
+                "order": "desc",
+                "page": 1,
+                "size": 250
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "assets": { "items": [], "nextPage": null }
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = make_client(&server);
+        let page = client.list_metadata_page(None, 1, 250).await.unwrap();
+        assert!(page.items.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_metadata_page_surfaces_server_error() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/api/search/metadata"))
@@ -133,7 +159,7 @@ mod tests {
 
         let client = make_client(&server);
         let err = client
-            .list_by_make_page("FUJIFILM", 1, 250)
+            .list_metadata_page(Some("FUJIFILM"), 1, 250)
             .await
             .unwrap_err();
         let msg = format!("{err:#}");

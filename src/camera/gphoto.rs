@@ -5,9 +5,11 @@ use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use gphoto2::filesys::FileInfo;
+use gphoto2::{Camera, Context};
 use sha1::{Digest, Sha1};
 use std::io::Write;
 use tempfile::NamedTempFile;
+use tracing::debug;
 
 use super::object_info::{AssetKind, ObjectInfo};
 
@@ -52,6 +54,60 @@ fn local_clock_secs_to_utc(secs: libc::time_t, tz: Tz) -> Result<DateTime<Utc>> 
         .single()
         .ok_or_else(|| anyhow!("ambiguous or missing local time in tz {tz:?}"))?;
     Ok(local.with_timezone(&Utc))
+}
+
+/// Number of bytes at the start of `download_exif`'s output before the
+/// TIFF block: `FFE1` APP1 marker (2) + 2-byte length + `Exif\0\0` (6).
+const EXIF_APP1_PREFIX_LEN: usize = 10;
+
+/// Sniff the camera's EXIF `Make` tag by downloading the EXIF block of
+/// the first JPEG on the card and parsing it. Returns `None` if no JPEG
+/// is available, the download fails, or the EXIF doesn't carry a `Make`
+/// tag — caller falls back to caching all Immich assets unfiltered.
+///
+/// We do this once per session (cheap: ~65 KB transfer for a typical
+/// Fuji APP1 segment) so the Immich dedup cache can be scoped to the
+/// camera's manufacturer instead of hardcoding "FUJIFILM".
+pub async fn detect_camera_make(
+    camera: &Camera,
+    ctx: &Context,
+    files: &[(String, String)],
+) -> Option<String> {
+    let (folder, name) = files.iter().find(|(_, n)| {
+        n.rsplit_once('.').is_some_and(|(_, ext)| {
+            ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg")
+        })
+    })?;
+    let cf = camera.fs().download_exif(folder, name).await.ok()?;
+    let raw = cf.get_data(ctx).await.ok()?;
+    if raw.len() <= EXIF_APP1_PREFIX_LEN {
+        debug!(
+            len = raw.len(),
+            "exif block too short to contain a Make tag"
+        );
+        return None;
+    }
+    let tiff = raw[EXIF_APP1_PREFIX_LEN..].to_vec();
+    let parsed = match exif::Reader::new().read_raw(tiff) {
+        Ok(e) => e,
+        Err(e) => {
+            debug!(error = ?e, "kamadak-exif could not parse the camera's EXIF block");
+            return None;
+        }
+    };
+    let field = parsed.get_field(exif::Tag::Make, exif::In::PRIMARY)?;
+    let make = match &field.value {
+        exif::Value::Ascii(strs) => {
+            let bytes = strs.first()?.as_slice();
+            std::str::from_utf8(bytes)
+                .ok()?
+                .trim_end_matches('\0')
+                .trim()
+                .to_owned()
+        }
+        _ => return None,
+    };
+    (!make.is_empty()).then_some(make)
 }
 
 /// Spool the camera-file's bytes into a tempfile and hash on the way.

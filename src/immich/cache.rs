@@ -24,7 +24,6 @@ const PAGE_SIZE: u32 = 250;
 /// from EXIF on ingest, which drifts from our mtime-derived `taken_at`
 /// by minutes in either direction.
 const TAKEN_AT_WINDOW: Duration = Duration::hours(24);
-const MAKE: &str = "FUJIFILM";
 
 pub struct ImmichCache {
     by_filename: HashMap<String, Vec<Entry>>,
@@ -40,7 +39,12 @@ struct Entry {
 impl ImmichCache {
     /// Build a fresh cache by paging the metadata search until `nextPage`
     /// is null. Costs one HTTP request per `PAGE_SIZE` assets in Immich.
-    pub async fn load(client: &ImmichClient) -> Result<Self> {
+    ///
+    /// `make` scopes the cache to a single camera manufacturer's EXIF
+    /// `Make` tag (e.g. `"FUJIFILM"`, `"Canon"`, `"NIKON CORPORATION"`).
+    /// `None` caches every asset Immich has, which is correct but
+    /// proportionally slower for big libraries.
+    pub async fn load(client: &ImmichClient, make: Option<&str>) -> Result<Self> {
         let mut by_filename: HashMap<String, Vec<Entry>> = HashMap::new();
         let mut max_taken_at: Option<DateTime<Utc>> = None;
         let mut asset_count = 0usize;
@@ -48,7 +52,7 @@ impl ImmichCache {
 
         loop {
             let page_resp = client
-                .list_by_make_page(MAKE, page, PAGE_SIZE)
+                .list_metadata_page(make, page, PAGE_SIZE)
                 .await
                 .with_context(|| format!("loading Immich asset cache (page {page})"))?;
             let next_page_present = page_resp.next_page.is_some();
@@ -146,7 +150,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let cache = ImmichCache::load(&make_client(&server)).await.unwrap();
+        let cache = ImmichCache::load(&make_client(&server), Some("FUJIFILM"))
+            .await
+            .unwrap();
         assert_eq!(cache.asset_count(), 2);
         assert_eq!(
             cache.max_taken_at().unwrap().to_rfc3339(),
@@ -190,7 +196,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let cache = ImmichCache::load(&make_client(&server)).await.unwrap();
+        let cache = ImmichCache::load(&make_client(&server), Some("FUJIFILM"))
+            .await
+            .unwrap();
         assert_eq!(cache.asset_count(), 2);
     }
 
@@ -208,7 +216,9 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let cache = ImmichCache::load(&make_client(&server)).await.unwrap();
+        let cache = ImmichCache::load(&make_client(&server), Some("FUJIFILM"))
+            .await
+            .unwrap();
 
         // Same filename, taken_at within ±24h -> hit.
         let close = Utc.with_ymd_and_hms(2026, 5, 16, 18, 0, 0).unwrap();
@@ -241,7 +251,9 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let cache = ImmichCache::load(&make_client(&server)).await.unwrap();
+        let cache = ImmichCache::load(&make_client(&server), Some("FUJIFILM"))
+            .await
+            .unwrap();
 
         let near_old = Utc.with_ymd_and_hms(2026, 1, 1, 18, 0, 0).unwrap();
         let near_new = Utc.with_ymd_and_hms(2026, 5, 16, 18, 0, 0).unwrap();
