@@ -1,1 +1,8 @@
 /target
+
+# makepkg build artifacts (run from packaging/arch/)
+/packaging/arch/src/
+/packaging/arch/pkg/
+/packaging/arch/gphoto2immich/
+/packaging/arch/*.pkg.tar.zst
+/packaging/arch/.SRCINFO
