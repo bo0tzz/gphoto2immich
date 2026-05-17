@@ -10,8 +10,8 @@ use tracing::debug;
 
 const APP_NAME: &str = "fujimmich";
 
-/// Shared counter of new uploads. The pipeline increments via
-/// `record_upload`; the camera task drains it at session end.
+/// Shared counter of new syncs (= files downloaded from the camera and
+/// queued for upload). The camera task both increments and drains it.
 #[derive(Clone, Default)]
 pub struct SyncStats {
     uploaded: Arc<AtomicU32>,
@@ -22,8 +22,11 @@ impl SyncStats {
         Self::default()
     }
 
-    /// Count one freshly created (i.e. not a server-side duplicate) asset.
-    pub fn record_upload(&self) {
+    /// Count one asset that was downloaded from the camera and queued for
+    /// upload. Counted on the camera side rather than after the HTTP POST
+    /// completes so the count reflects "what came off the camera" even if
+    /// the pipeline is still draining when we read it.
+    pub fn record_synced(&self) {
         self.uploaded.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -75,22 +78,22 @@ mod tests {
     #[test]
     fn take_count_resets() {
         let s = SyncStats::new();
-        s.record_upload();
-        s.record_upload();
-        s.record_upload();
+        s.record_synced();
+        s.record_synced();
+        s.record_synced();
         assert_eq!(s.take_count(), 3);
         assert_eq!(s.take_count(), 0);
     }
 
     #[test]
-    fn record_upload_is_thread_safe() {
+    fn record_synced_is_thread_safe() {
         let s = SyncStats::new();
         std::thread::scope(|scope| {
             for _ in 0..4 {
                 let s = s.clone();
                 scope.spawn(move || {
                     for _ in 0..25 {
-                        s.record_upload();
+                        s.record_synced();
                     }
                 });
             }

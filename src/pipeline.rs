@@ -14,7 +14,6 @@ use crate::camera::AssetKind;
 use crate::config::Config;
 use crate::immich::{ImmichClient, UploadOutcome, UploadRequest};
 use crate::job::{PipelineMessage, UploadJob};
-use crate::notifications::SyncStats;
 use crate::stack_tracker::{Decision, StackTracker};
 
 #[derive(Clone)]
@@ -22,16 +21,14 @@ pub struct Pipeline {
     client: Arc<ImmichClient>,
     stack_tracker: Arc<Mutex<StackTracker>>,
     stack_enabled: bool,
-    stats: SyncStats,
 }
 
 impl Pipeline {
-    pub fn new(client: Arc<ImmichClient>, config: &Config, stats: SyncStats) -> Self {
+    pub fn new(client: Arc<ImmichClient>, config: &Config) -> Self {
         Pipeline {
             client,
             stack_tracker: Arc::new(Mutex::new(StackTracker::new())),
             stack_enabled: config.stack_jpeg_raf,
-            stats,
         }
     }
 
@@ -84,14 +81,11 @@ impl Pipeline {
         };
         let result = self.client.upload(req).await?;
         match result.outcome {
-            UploadOutcome::Created => {
-                self.stats.record_upload();
-                info!(
-                    asset_id = %result.asset_id,
-                    filename = %info.filename,
-                    "uploaded"
-                );
-            }
+            UploadOutcome::Created => info!(
+                asset_id = %result.asset_id,
+                filename = %info.filename,
+                "uploaded"
+            ),
             UploadOutcome::Duplicate => debug!(
                 asset_id = %result.asset_id,
                 filename = %info.filename,

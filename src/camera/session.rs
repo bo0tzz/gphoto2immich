@@ -16,6 +16,11 @@ use super::CameraDeps;
 use crate::job::{PipelineMessage, UploadJob};
 
 const BACKFILL_SLOP: chrono::Duration = chrono::Duration::hours(1);
+/// Bail out of the backfill loop after this many consecutive per-file
+/// errors. Cheap defence against the "camera was unplugged mid-sync"
+/// case, where every subsequent libgphoto2 call returns an IO error and
+/// we'd otherwise log hundreds of warnings before giving up.
+const MAX_CONSECUTIVE_FAILURES: u32 = 3;
 
 /// One sync of one camera: run a backfill against the current filesystem
 /// state, then return. The camera is left untouched on the card; the
@@ -54,6 +59,7 @@ async fn backfill(
 ) -> Result<()> {
     let all = enumerate_files(camera).await?;
     info!(count = all.len(), "enumerated files on camera");
+    let mut consecutive_failures: u32 = 0;
     for (folder, name) in all {
         if shutdown.load(Ordering::Relaxed) {
             return Ok(());
@@ -62,19 +68,28 @@ async fn backfill(
             debug!(folder = %folder, name = %name, "skipping non-asset filename");
             continue;
         }
-        match prefetch_and_filter(camera, &folder, &name, deps, cutoff).await {
+        let result = match prefetch_and_filter(camera, &folder, &name, deps, cutoff).await {
             Ok(Some(info)) => {
-                if let Err(e) =
-                    process_one_with_info(deps, tx, ctx, camera, &folder, &name, info).await
-                {
-                    warn!(folder = %folder, name = %name, error = ?e, "process_one failed");
-                }
+                process_one_with_info(deps, tx, ctx, camera, &folder, &name, info).await
             }
             Ok(None) => {
                 debug!(folder = %folder, name = %name, "before cutoff, skipping");
+                Ok(())
             }
+            Err(e) => Err(e.context("file_info")),
+        };
+        match result {
+            Ok(()) => consecutive_failures = 0,
             Err(e) => {
-                warn!(folder = %folder, name = %name, error = ?e, "info failed");
+                warn!(folder = %folder, name = %name, error = ?e, "file failed");
+                consecutive_failures += 1;
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    warn!(
+                        consecutive = consecutive_failures,
+                        "too many consecutive failures, ending backfill early"
+                    );
+                    return Ok(());
+                }
             }
         }
     }
@@ -206,6 +221,7 @@ async fn process_one_with_info(
         }),
     )
     .await;
+    deps.stats.record_synced();
     Ok(())
 }
 
