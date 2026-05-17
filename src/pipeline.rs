@@ -146,10 +146,7 @@ impl Pipeline {
 /// reqwest errors we can match on, and a few seconds of wasted retry on
 /// a genuinely permanent 4xx is a much smaller cost than losing a
 /// downloaded file because of one HTTP hiccup.
-async fn upload_with_retry(
-    client: &ImmichClient,
-    req: UploadRequest<'_>,
-) -> Result<UploadResult> {
+async fn upload_with_retry(client: &ImmichClient, req: UploadRequest<'_>) -> Result<UploadResult> {
     let mut delay = UPLOAD_INITIAL_BACKOFF;
     let mut last_err = None;
     for attempt in 1..=UPLOAD_MAX_ATTEMPTS {

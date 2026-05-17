@@ -37,7 +37,10 @@ async fn run(cfg: config::Config) -> Result<()> {
     let shutdown = Arc::new(AtomicBool::new(false));
     install_signal_handler(shutdown.clone());
 
-    let immich = Arc::new(immich::ImmichClient::new(&cfg.immich_url, &cfg.immich_api_key)?);
+    let immich = Arc::new(immich::ImmichClient::new(
+        &cfg.immich_url,
+        &cfg.immich_api_key,
+    )?);
     let stats = notifications::SyncStats::new();
     let pipeline = pipeline::Pipeline::new(immich.clone(), &cfg);
 
@@ -68,15 +71,14 @@ async fn run(cfg: config::Config) -> Result<()> {
 
 fn install_signal_handler(shutdown: Arc<AtomicBool>) {
     tokio::spawn(async move {
-        let mut sigterm = match tokio::signal::unix::signal(
-            tokio::signal::unix::SignalKind::terminate(),
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::warn!("failed to register SIGTERM handler: {e}");
-                return;
-            }
-        };
+        let mut sigterm =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!("failed to register SIGTERM handler: {e}");
+                    return;
+                }
+            };
         tokio::select! {
             _ = tokio::signal::ctrl_c() => tracing::info!("received SIGINT, shutting down"),
             _ = sigterm.recv() => tracing::info!("received SIGTERM, shutting down"),

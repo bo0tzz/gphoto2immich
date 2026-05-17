@@ -48,7 +48,9 @@ impl ImmichClient {
         // base URL is guaranteed to have a trailing slash by `parse_base_url`,
         // so .join with a leading-slash path appends correctly even if base
         // already includes a path prefix.
-        self.base.join(path.trim_start_matches('/')).expect("valid path")
+        self.base
+            .join(path.trim_start_matches('/'))
+            .expect("valid path")
     }
 
     pub(crate) fn http(&self) -> &Client {

@@ -44,8 +44,8 @@ pub fn digest_info(info: &FileInfo, filename: &str, tz: Tz) -> Result<ObjectInfo
 
 fn local_clock_secs_to_utc(secs: libc::time_t, tz: Tz) -> Result<DateTime<Utc>> {
     use chrono::TimeZone;
-    let pseudo_utc = DateTime::<Utc>::from_timestamp(secs, 0)
-        .ok_or_else(|| anyhow!("invalid timestamp"))?;
+    let pseudo_utc =
+        DateTime::<Utc>::from_timestamp(secs, 0).ok_or_else(|| anyhow!("invalid timestamp"))?;
     let naive = pseudo_utc.naive_utc();
     let local = tz
         .from_local_datetime(&naive)
@@ -57,7 +57,9 @@ fn local_clock_secs_to_utc(secs: libc::time_t, tz: Tz) -> Result<DateTime<Utc>> 
 /// Spool the camera-file's bytes into a tempfile and hash on the way.
 pub fn spool_to_tempfile(data: &[u8]) -> Result<DownloadedFile> {
     let mut tempfile = NamedTempFile::new().context("creating tempfile for download")?;
-    tempfile.write_all(data).context("writing download to tempfile")?;
+    tempfile
+        .write_all(data)
+        .context("writing download to tempfile")?;
     tempfile.flush().context("flushing tempfile")?;
     let sha1_hex = hex::encode(Sha1::digest(data));
     Ok(DownloadedFile {

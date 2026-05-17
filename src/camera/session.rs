@@ -86,10 +86,8 @@ async fn backfill(
         }
         let result = match prefetch_and_filter(camera, &folder, &name, deps, cutoff).await {
             Ok(Some(info)) => {
-                let outcome = process_one_with_info(
-                    deps, tx, ctx, camera, &folder, &name, info,
-                )
-                .await;
+                let outcome =
+                    process_one_with_info(deps, tx, ctx, camera, &folder, &name, info).await;
                 if let Ok(o) = &outcome {
                     match o {
                         FileOutcome::Downloaded => stats.downloaded += 1,

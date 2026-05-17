@@ -39,9 +39,7 @@ fn parse_bool_env(name: &str, default: bool) -> Result<bool> {
         Ok(v) => match v.to_ascii_lowercase().as_str() {
             "true" | "1" | "yes" | "on" => Ok(true),
             "false" | "0" | "no" | "off" => Ok(false),
-            other => Err(anyhow!(
-                "{name} must be true/false (got {other:?})"
-            )),
+            other => Err(anyhow!("{name} must be true/false (got {other:?})")),
         },
         Err(_) => Ok(default),
     }

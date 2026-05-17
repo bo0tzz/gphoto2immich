@@ -86,23 +86,16 @@ impl ImmichClient {
         // not exact. Filter to exact (case-insensitive) matches so a
         // "DSCF1234.JPG" search doesn't accept e.g. "DSCF1234.RAF" or
         // "DSCF1234.JPG.bak".
-        Ok(hits
-            .assets
-            .items
-            .into_iter()
-            .find(|a| {
-                a.original_file_name
-                    .as_deref()
-                    .is_some_and(|n| n.eq_ignore_ascii_case(filename))
-            }))
+        Ok(hits.assets.items.into_iter().find(|a| {
+            a.original_file_name
+                .as_deref()
+                .is_some_and(|n| n.eq_ignore_ascii_case(filename))
+        }))
     }
 
     /// Returns the `fileCreatedAt` of the most recently uploaded asset from
     /// the given Fuji camera model, or `None` if Immich has none.
-    pub async fn most_recent_taken_at(
-        &self,
-        model: Option<&str>,
-    ) -> Result<Option<DateTime<Utc>>> {
+    pub async fn most_recent_taken_at(&self, model: Option<&str>) -> Result<Option<DateTime<Utc>>> {
         let body = MetadataSearchBody {
             original_file_name: None,
             taken_after: None,
@@ -114,7 +107,12 @@ impl ImmichClient {
             size: Some(1),
         };
         let resp = self.metadata_search(&body).await?;
-        Ok(resp.assets.items.into_iter().next().and_then(|a| a.file_created_at))
+        Ok(resp
+            .assets
+            .items
+            .into_iter()
+            .next()
+            .and_then(|a| a.file_created_at))
     }
 
     async fn metadata_search(&self, body: &MetadataSearchBody<'_>) -> Result<MetadataSearchResp> {
@@ -195,7 +193,11 @@ mod tests {
 
         let client = make_client(&server).await;
         let taken = Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap();
-        assert!(client.find_existing("DSCF0001.JPG", taken).await.unwrap().is_none());
+        assert!(client
+            .find_existing("DSCF0001.JPG", taken)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -233,7 +235,11 @@ mod tests {
 
         let client = make_client(&server).await;
         let taken = Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap();
-        assert!(client.find_existing("DSCF0002.JPG", taken).await.unwrap().is_none());
+        assert!(client
+            .find_existing("DSCF0002.JPG", taken)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -295,6 +301,9 @@ mod tests {
             .unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("401"), "expected 401 in error: {msg}");
-        assert!(msg.contains("unauthorized"), "expected body in error: {msg}");
+        assert!(
+            msg.contains("unauthorized"),
+            "expected body in error: {msg}"
+        );
     }
 }
