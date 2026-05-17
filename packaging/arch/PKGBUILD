@@ -1,7 +1,7 @@
 # Maintainer: bo0tzz <boet@futo.org>
 pkgname=gphoto2immich-git
 _pkgname=gphoto2immich
-pkgver=r31.fa90470
+pkgver=r32.c900a66
 pkgrel=1
 pkgdesc="Auto-sync daemon for Fujifilm (and other libgphoto2) cameras into Immich"
 arch=('x86_64')

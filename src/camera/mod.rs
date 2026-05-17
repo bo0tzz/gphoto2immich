@@ -10,7 +10,6 @@ use anyhow::Result;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
-use crate::config::Config;
 use crate::immich::ImmichClient;
 use crate::job::PipelineMessage;
 use crate::notifications::{self, SyncStats};
@@ -26,7 +25,6 @@ const SESSION_ERROR_BACKOFF: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct CameraDeps {
-    pub config: Config,
     pub immich: Arc<ImmichClient>,
     pub stats: SyncStats,
 }

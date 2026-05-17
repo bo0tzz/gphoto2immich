@@ -48,11 +48,7 @@ async fn run(cfg: config::Config) -> Result<()> {
 
     let pipeline_handle = tokio::spawn(pipeline.run(rx));
 
-    let camera_deps = camera::CameraDeps {
-        config: cfg.clone(),
-        immich,
-        stats,
-    };
+    let camera_deps = camera::CameraDeps { immich, stats };
     let camera_shutdown = shutdown.clone();
     let camera_handle = tokio::spawn(async move {
         if let Err(e) = camera::run(camera_deps, tx, camera_shutdown).await {

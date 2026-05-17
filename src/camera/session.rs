@@ -56,7 +56,7 @@ pub async fn run(
         cutoff = ?cutoff,
         "starting backfill"
     );
-    backfill(deps, tx, ctx, camera, &cache, cutoff, files, shutdown).await?;
+    backfill(tx, ctx, camera, &cache, cutoff, files, shutdown).await?;
     info!("backfill complete");
     Ok(())
 }
@@ -74,7 +74,6 @@ struct BackfillStats {
 
 #[allow(clippy::too_many_arguments)] // session-wide context is genuinely needed here
 async fn backfill(
-    deps: &CameraDeps,
     tx: &mpsc::Sender<PipelineMessage>,
     ctx: &Context,
     camera: &Camera,
@@ -97,7 +96,7 @@ async fn backfill(
             stats.skipped_non_asset += 1;
             continue;
         }
-        let result = match prefetch_and_filter(camera, &folder, &name, deps, cutoff).await {
+        let result = match prefetch_and_filter(camera, &folder, &name, cutoff).await {
             Ok(Some(info)) => {
                 let outcome =
                     process_one_with_info(tx, ctx, camera, cache, &folder, &name, info).await;
@@ -194,11 +193,10 @@ async fn prefetch_and_filter(
     camera: &Camera,
     folder: &str,
     name: &str,
-    deps: &CameraDeps,
     cutoff: Option<DateTime<Utc>>,
 ) -> Result<Option<ObjectInfo>> {
     let info = camera.fs().file_info(folder, name).await?;
-    let object_info = digest_info(&info, name, deps.config.camera_tz)?;
+    let object_info = digest_info(&info, name)?;
     if matches!(object_info.kind, AssetKind::Other) {
         trace!(name = %name, "skipping non-photo/video");
         return Ok(None);
