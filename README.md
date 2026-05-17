@@ -147,15 +147,24 @@ covered by [wiremock][] tests; the rest needs hardware.
 
 [wiremock]: https://crates.io/crates/wiremock
 
-## What it intentionally doesn't do
+## Known limitations
 
-- Network/Wi-Fi sync. Tried; X-T3 needs proprietary BLE wake which isn't
-  worth implementing for v1.
+### Cutoff and re-uploading deleted assets
+
+The backfill skips any file on the card older than `most_recent_immich_fuji_asset.fileCreatedAt − 1h`. That's a one-line optimisation that keeps every reconnect from doing N HTTP requests, but it has a sharp edge:
+
+> If you delete a file from Immich and want it re-uploaded, the cutoff will skip it unless every Immich asset newer than it is also gone.
+
+In practice this means deleting one or two recent files from the UI and re-plugging the camera won't always pull them back. Either delete the *newest* asset too (so the cutoff drops below the file you actually want restored), or re-upload it manually via the Immich web UI by dragging from the card.
+
+### What it intentionally doesn't do
+
+- Network/Wi-Fi sync. The X-T3 (and other older Fuji bodies) need proprietary BLE wake to bring up their AP, which isn't worth implementing for v1. USB only.
 - Multi-camera support. Single body, single instance.
 - Local SQLite / state cache. Dedup goes to Immich every time.
 - Push notifications when the camera is absent. The daemon just waits.
-- Delete from the camera after upload. Photos stay on the card.
+- **Delete from the camera after upload. Photos stay on the card** — deliberate. The card is your backup until you decide it isn't. Format when you're ready.
 
 ## License
 
-TBD.
+[AGPL-3.0-or-later](LICENSE).

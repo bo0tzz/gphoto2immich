@@ -6,7 +6,7 @@ pkgrel=1
 pkgdesc="Auto-sync daemon for Fujifilm (and other libgphoto2) cameras into Immich"
 arch=('x86_64')
 url="https://github.com/bo0tzz/fujimmich"
-license=('custom:TBD')
+license=('AGPL-3.0-or-later')
 depends=('libgphoto2' 'libxml2' 'gcc-libs')
 makedepends=('git' 'rust' 'cargo')
 provides=("$_pkgname")
@@ -43,4 +43,5 @@ package() {
     install -Dm644 packaging/systemd/env.example \
         "$pkgdir/usr/share/doc/$_pkgname/env.example"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$_pkgname/LICENSE"
 }

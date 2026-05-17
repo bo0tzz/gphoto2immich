@@ -8,7 +8,7 @@ use anyhow::{Context as _, Result};
 use chrono::{DateTime, Utc};
 use gphoto2::{Camera, Context};
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use super::gphoto::{digest_info, spool_to_tempfile};
 use super::object_info::{AssetKind, ObjectInfo};
@@ -80,7 +80,7 @@ async fn backfill(
             break;
         }
         if !is_real_asset_name(&name) {
-            debug!(folder = %folder, name = %name, "skipping non-asset filename");
+            trace!(folder = %folder, name = %name, "skipping non-asset filename");
             stats.skipped_non_asset += 1;
             continue;
         }
@@ -99,7 +99,7 @@ async fn backfill(
                 outcome.map(|_| ())
             }
             Ok(None) => {
-                debug!(folder = %folder, name = %name, "before cutoff or non-asset kind, skipping");
+                trace!(folder = %folder, name = %name, "before cutoff or non-asset kind, skipping");
                 stats.skipped_before_cutoff += 1;
                 Ok(())
             }
@@ -189,7 +189,7 @@ async fn prefetch_and_filter(
     let info = camera.fs().file_info(folder, name).await?;
     let object_info = digest_info(&info, name, deps.config.camera_tz)?;
     if matches!(object_info.kind, AssetKind::Other) {
-        debug!(name = %name, "skipping non-photo/video");
+        trace!(name = %name, "skipping non-photo/video");
         return Ok(None);
     }
     if let Some(c) = cutoff {
