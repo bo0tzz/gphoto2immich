@@ -40,6 +40,11 @@ pub async fn run(
 ) -> Result<()> {
     let ctx = ::gphoto2::Context::new()?;
 
+    // Port string of the camera we just successfully synced. Cleared when
+    // the camera disappears. Prevents hot-looping reopens after a session
+    // returns Ok while the camera is still plugged in.
+    let mut already_synced: Option<String> = None;
+
     while !shutdown.load(Ordering::Relaxed) {
         let descriptors: Vec<_> = match ctx.list_cameras().await {
             Ok(iter) => iter.collect(),
@@ -53,11 +58,22 @@ pub async fn run(
         let descriptor = match descriptors.into_iter().next() {
             Some(d) => d,
             None => {
+                if already_synced.take().is_some() {
+                    info!("camera disconnected; ready for next sync");
+                }
                 debug!("no camera detected");
                 tokio::time::sleep(DETECT_POLL_INTERVAL).await;
                 continue;
             }
         };
+
+        if already_synced.as_deref() == Some(&descriptor.port) {
+            // Same camera still plugged in after a completed sync. Wait
+            // for it to be unplugged before doing anything else.
+            debug!(port = %descriptor.port, "already synced; waiting for unplug");
+            tokio::time::sleep(DETECT_POLL_INTERVAL).await;
+            continue;
+        }
 
         info!(model = %descriptor.model, port = %descriptor.port, "camera detected");
         let camera = match ctx.get_camera(&descriptor).await {
@@ -74,7 +90,10 @@ pub async fn run(
         notifications::notify_session_end(deps.stats.take_count());
         drop(camera);
         match session_result {
-            Ok(()) => info!("camera session ended cleanly"),
+            Ok(()) => {
+                info!("camera session ended cleanly");
+                already_synced = Some(descriptor.port);
+            }
             Err(e) => {
                 warn!(error = ?e, "camera session ended with error");
                 tokio::time::sleep(SESSION_ERROR_BACKOFF).await;

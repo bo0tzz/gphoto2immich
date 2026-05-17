@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use chrono::{DateTime, SecondsFormat, Utc};
 use reqwest::{header, Client, StatusCode, Url};
 
 pub mod search;
@@ -83,6 +84,12 @@ async fn ensure_success(resp: reqwest::Response, op: &str) -> Result<reqwest::Re
 /// uploads; callers want to distinguish that from a real success.
 fn is_ok_or_dup(status: StatusCode) -> bool {
     status.is_success()
+}
+
+/// Format a UTC instant the way Immich's request validators want it.
+/// Their regex rejects `+00:00`; only the literal `Z` suffix is accepted.
+pub(crate) fn immich_datetime(t: DateTime<Utc>) -> String {
+    t.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 fn truncate(s: &str, max: usize) -> String {

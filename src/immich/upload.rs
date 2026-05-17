@@ -7,7 +7,7 @@ use reqwest::{multipart, StatusCode};
 use serde::Deserialize;
 use std::path::Path;
 
-use super::{ensure_success, ImmichClient};
+use super::{ensure_success, immich_datetime, ImmichClient};
 
 const PATH: &str = "/api/assets";
 
@@ -51,14 +51,8 @@ impl ImmichClient {
             .mime_str("application/octet-stream")
             .context("setting multipart mime")?;
         let form = multipart::Form::new()
-            .text(
-                "fileCreatedAt",
-                req.file_created_at.to_rfc3339(),
-            )
-            .text(
-                "fileModifiedAt",
-                req.file_created_at.to_rfc3339(),
-            )
+            .text("fileCreatedAt", immich_datetime(req.file_created_at))
+            .text("fileModifiedAt", immich_datetime(req.file_created_at))
             .text("deviceAssetId", req.filename.to_owned())
             .text("deviceId", "fujimmich")
             .text("isFavorite", "false")

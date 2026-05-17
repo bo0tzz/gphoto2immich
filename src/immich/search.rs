@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::{ensure_success, ImmichClient};
+use super::{ensure_success, immich_datetime, ImmichClient};
 
 const PATH: &str = "/api/search/metadata";
 
@@ -63,8 +63,8 @@ impl ImmichClient {
         let window = ChronoDuration::minutes(2);
         let body = MetadataSearchBody {
             original_file_name: Some(filename),
-            taken_after: Some((taken_at - window).to_rfc3339()),
-            taken_before: Some((taken_at + window).to_rfc3339()),
+            taken_after: Some(immich_datetime(taken_at - window)),
+            taken_before: Some(immich_datetime(taken_at + window)),
             make: Some("FUJIFILM"),
             model: None,
             order: None,
@@ -132,8 +132,8 @@ mod tests {
             .and(header("x-api-key", "test-api-key"))
             .and(wiremock::matchers::body_json(json!({
                 "originalFileName": "DSCF0001.JPG",
-                "takenAfter": "2026-05-16T11:58:00+00:00",
-                "takenBefore": "2026-05-16T12:02:00+00:00",
+                "takenAfter": "2026-05-16T11:58:00.000Z",
+                "takenBefore": "2026-05-16T12:02:00.000Z",
                 "make": "FUJIFILM",
                 "page": 1,
                 "size": 1
