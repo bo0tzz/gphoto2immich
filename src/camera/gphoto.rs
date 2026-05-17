@@ -44,7 +44,7 @@ pub fn digest_info(info: &FileInfo, filename: &str, tz: Tz) -> Result<ObjectInfo
 
 fn local_clock_secs_to_utc(secs: libc::time_t, tz: Tz) -> Result<DateTime<Utc>> {
     use chrono::TimeZone;
-    let pseudo_utc = DateTime::<Utc>::from_timestamp(secs as i64, 0)
+    let pseudo_utc = DateTime::<Utc>::from_timestamp(secs, 0)
         .ok_or_else(|| anyhow!("invalid timestamp"))?;
     let naive = pseudo_utc.naive_utc();
     let local = tz

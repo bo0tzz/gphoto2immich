@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, SecondsFormat, Utc};
-use reqwest::{header, Client, StatusCode, Url};
+use reqwest::{header, Client, Url};
 
 pub mod search;
 pub mod stack;
@@ -78,12 +78,6 @@ async fn ensure_success(resp: reqwest::Response, op: &str) -> Result<reqwest::Re
         "{op} failed with {status}: {}",
         truncate(&body, 500)
     ))
-}
-
-/// Some Immich responses include 200 + an asset id for known-duplicate
-/// uploads; callers want to distinguish that from a real success.
-fn is_ok_or_dup(status: StatusCode) -> bool {
-    status.is_success()
 }
 
 /// Format a UTC instant the way Immich's request validators want it.
