@@ -4,6 +4,7 @@
 //! create a stack.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use tokio::sync::{mpsc, Mutex};
@@ -12,9 +13,13 @@ use tracing::{debug, error, info, warn};
 
 use crate::camera::AssetKind;
 use crate::config::Config;
-use crate::immich::{ImmichClient, UploadOutcome, UploadRequest};
+use crate::immich::{ImmichClient, UploadOutcome, UploadRequest, UploadResult};
 use crate::job::{PipelineMessage, UploadJob};
 use crate::stack_tracker::{Decision, StackTracker};
+
+const UPLOAD_MAX_ATTEMPTS: u32 = 4;
+const UPLOAD_INITIAL_BACKOFF: Duration = Duration::from_millis(500);
+const UPLOAD_MAX_BACKOFF: Duration = Duration::from_secs(15);
 
 #[derive(Clone)]
 pub struct Pipeline {
@@ -79,7 +84,7 @@ impl Pipeline {
             file_created_at: info.date_created_utc,
             sha1_hex: &sha1_hex,
         };
-        let result = self.client.upload(req).await?;
+        let result = upload_with_retry(&self.client, req).await?;
         match result.outcome {
             UploadOutcome::Created => info!(
                 asset_id = %result.asset_id,
@@ -131,4 +136,42 @@ impl Pipeline {
             }
         }
     }
+}
+
+/// Retry an upload through transient errors. Backs off exponentially up
+/// to `UPLOAD_MAX_BACKOFF` between attempts. We retry even on plain
+/// errors (rather than gating on "is this transient?") because the
+/// failure modes the daemon hits in practice — connection reset,
+/// `BrokenPipe` mid-body, Immich restart blip — don't surface as typed
+/// reqwest errors we can match on, and a few seconds of wasted retry on
+/// a genuinely permanent 4xx is a much smaller cost than losing a
+/// downloaded file because of one HTTP hiccup.
+async fn upload_with_retry(
+    client: &ImmichClient,
+    req: UploadRequest<'_>,
+) -> Result<UploadResult> {
+    let mut delay = UPLOAD_INITIAL_BACKOFF;
+    let mut last_err = None;
+    for attempt in 1..=UPLOAD_MAX_ATTEMPTS {
+        match client.upload(req.clone()).await {
+            Ok(r) => return Ok(r),
+            Err(e) => {
+                if attempt == UPLOAD_MAX_ATTEMPTS {
+                    last_err = Some(e);
+                    break;
+                }
+                warn!(
+                    attempt,
+                    max = UPLOAD_MAX_ATTEMPTS,
+                    filename = req.filename,
+                    retry_in_ms = delay.as_millis() as u64,
+                    error = ?e,
+                    "upload failed, will retry"
+                );
+                tokio::time::sleep(delay).await;
+                delay = (delay * 2).min(UPLOAD_MAX_BACKOFF);
+            }
+        }
+    }
+    Err(last_err.expect("loop ran at least once"))
 }

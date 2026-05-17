@@ -13,7 +13,7 @@ pub mod search;
 pub mod stack;
 pub mod upload;
 
-pub use upload::{UploadOutcome, UploadRequest};
+pub use upload::{UploadOutcome, UploadRequest, UploadResult};
 
 #[derive(Clone)]
 pub struct ImmichClient {

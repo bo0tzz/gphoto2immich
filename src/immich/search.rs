@@ -60,7 +60,15 @@ impl ImmichClient {
         filename: &str,
         taken_at: DateTime<Utc>,
     ) -> Result<Option<AssetSummary>> {
-        let window = ChronoDuration::minutes(2);
+        // Wide window: Immich rewrites `fileCreatedAt` from EXIF
+        // `DateTimeOriginal` on ingest, which can drift from our
+        // mtime-derived `taken_at` by several minutes in either
+        // direction. Pure-filename collisions on a Fuji body require
+        // the file counter to roll over (9999 shots in one folder),
+        // which is days-to-months apart in practice — so a ±24h
+        // window is generous against the drift and tight enough to
+        // disambiguate collisions.
+        let window = ChronoDuration::hours(24);
         let body = MetadataSearchBody {
             original_file_name: Some(filename),
             taken_after: Some(immich_datetime(taken_at - window)),
@@ -146,8 +154,8 @@ mod tests {
             .and(header("x-api-key", "test-api-key"))
             .and(wiremock::matchers::body_json(json!({
                 "originalFileName": "DSCF0001.JPG",
-                "takenAfter": "2026-05-16T11:58:00.000Z",
-                "takenBefore": "2026-05-16T12:02:00.000Z",
+                "takenAfter": "2026-05-15T12:00:00.000Z",
+                "takenBefore": "2026-05-17T12:00:00.000Z",
                 "make": "FUJIFILM",
                 "page": 1,
                 "size": 10
