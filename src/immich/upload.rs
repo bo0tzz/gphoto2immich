@@ -53,6 +53,12 @@ impl ImmichClient {
         let form = multipart::Form::new()
             .text("fileCreatedAt", immich_datetime(req.file_created_at))
             .text("fileModifiedAt", immich_datetime(req.file_created_at))
+            // `deviceAssetId` + `deviceId` are slated for removal in
+            // Immich v3 but are still required on the current (v2)
+            // releases — POST /api/assets returns 400 without them.
+            // Put back until v3 lands.
+            .text("deviceAssetId", req.filename.to_owned())
+            .text("deviceId", "gphoto2immich")
             .text("isFavorite", "false")
             .part("assetData", part);
 
