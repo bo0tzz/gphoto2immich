@@ -95,7 +95,9 @@ pub async fn run(
                 already_synced = Some(descriptor.port);
             }
             Err(e) => {
+                let summary = format!("{e:#}");
                 warn!(error = ?e, "camera session ended with error");
+                notifications::notify_session_failure(&summary);
                 tokio::time::sleep(SESSION_ERROR_BACKOFF).await;
             }
         }

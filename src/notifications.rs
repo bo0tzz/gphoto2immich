@@ -58,6 +58,35 @@ pub fn notify_session_end(uploaded: u32) {
     send("Sync complete", &body);
 }
 
+/// Always-fire notification for session failures. The user will want to
+/// know something went wrong even if no uploads completed — otherwise the
+/// daemon silently retrying in the background just looks like nothing
+/// happened.
+pub fn notify_session_failure(error_summary: &str) {
+    let mut body = String::from("Sync failed. Check the log for details.");
+    if !error_summary.is_empty() {
+        body.push_str("\n");
+        // Keep the popup compact: the full chain is in the log.
+        body.push_str(&truncate(error_summary, 200));
+    }
+    send("Sync failed", &body);
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_owned()
+    } else {
+        // Find the last char boundary <= max so we don't slice mid-codepoint.
+        let cut = s
+            .char_indices()
+            .map(|(i, _)| i)
+            .take_while(|&i| i <= max.saturating_sub(1))
+            .last()
+            .unwrap_or(0);
+        format!("{}…", &s[..cut])
+    }
+}
+
 fn send(summary: &str, body: &str) {
     // Best-effort: a missing D-Bus session (e.g. system-level daemon) just
     // means no popup, not a daemon failure.
@@ -83,6 +112,16 @@ mod tests {
         s.record_synced();
         assert_eq!(s.take_count(), 3);
         assert_eq!(s.take_count(), 0);
+    }
+
+    #[test]
+    fn truncate_respects_char_boundaries() {
+        assert_eq!(truncate("hello", 100), "hello");
+        assert_eq!(truncate("hello world", 5), "hell…");
+        // multi-byte char: 'é' is two bytes
+        let s = "café";
+        let t = truncate(s, 4);
+        assert!(t.is_char_boundary(t.len() - "…".len()));
     }
 
     #[test]
