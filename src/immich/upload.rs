@@ -53,8 +53,6 @@ impl ImmichClient {
         let form = multipart::Form::new()
             .text("fileCreatedAt", immich_datetime(req.file_created_at))
             .text("fileModifiedAt", immich_datetime(req.file_created_at))
-            .text("deviceAssetId", req.filename.to_owned())
-            .text("deviceId", "fujimmich")
             .text("isFavorite", "false")
             .part("assetData", part);
 
