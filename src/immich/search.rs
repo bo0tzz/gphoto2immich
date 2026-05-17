@@ -69,10 +69,24 @@ impl ImmichClient {
             model: None,
             order: None,
             page: Some(1),
-            size: Some(1),
+            // Pull a few in case the server's substring matching grabs
+            // neighbours we'd then filter out below.
+            size: Some(10),
         };
-        let mut hits = self.metadata_search(&body).await?;
-        Ok(hits.assets.items.pop())
+        let hits = self.metadata_search(&body).await?;
+        // `originalFileName` is a substring/ILIKE search on the Immich side,
+        // not exact. Filter to exact (case-insensitive) matches so a
+        // "DSCF1234.JPG" search doesn't accept e.g. "DSCF1234.RAF" or
+        // "DSCF1234.JPG.bak".
+        Ok(hits
+            .assets
+            .items
+            .into_iter()
+            .find(|a| {
+                a.original_file_name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(filename))
+            }))
     }
 
     /// Returns the `fileCreatedAt` of the most recently uploaded asset from
@@ -136,7 +150,7 @@ mod tests {
                 "takenBefore": "2026-05-16T12:02:00.000Z",
                 "make": "FUJIFILM",
                 "page": 1,
-                "size": 1
+                "size": 10
             })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "assets": { "items": [
@@ -152,6 +166,50 @@ mod tests {
         let taken = Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap();
         let found = client.find_existing("DSCF0001.JPG", taken).await.unwrap();
         assert_eq!(found.unwrap().id, "abc-123");
+    }
+
+    #[tokio::test]
+    async fn find_existing_ignores_substring_neighbour() {
+        // If Immich's substring matching returns the JPEG sibling's RAF,
+        // we must not treat it as an exact filename hit and skip the
+        // JPEG download.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/search/metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "assets": { "items": [
+                    { "id": "raf-id", "originalFileName": "DSCF0001.RAF",
+                      "fileCreatedAt": "2026-05-16T12:00:00+00:00" }
+                ]}
+            })))
+            .mount(&server)
+            .await;
+
+        let client = make_client(&server).await;
+        let taken = Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap();
+        assert!(client.find_existing("DSCF0001.JPG", taken).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn find_existing_picks_exact_match_among_noise() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/search/metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "assets": { "items": [
+                    { "id": "raf-id", "originalFileName": "DSCF0001.RAF",
+                      "fileCreatedAt": "2026-05-16T12:00:00+00:00" },
+                    { "id": "jpeg-id", "originalFileName": "DSCF0001.JPG",
+                      "fileCreatedAt": "2026-05-16T12:00:00+00:00" }
+                ]}
+            })))
+            .mount(&server)
+            .await;
+
+        let client = make_client(&server).await;
+        let taken = Utc.with_ymd_and_hms(2026, 5, 16, 12, 0, 0).unwrap();
+        let found = client.find_existing("DSCF0001.JPG", taken).await.unwrap();
+        assert_eq!(found.unwrap().id, "jpeg-id");
     }
 
     #[tokio::test]

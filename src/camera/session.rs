@@ -49,6 +49,17 @@ async fn compute_cutoff(deps: &CameraDeps) -> Result<Option<DateTime<Utc>>> {
     Ok(newest.map(|t| t - BACKFILL_SLOP))
 }
 
+#[derive(Debug, Default)]
+struct BackfillStats {
+    total_files: usize,
+    skipped_non_asset: u32,
+    skipped_before_cutoff: u32,
+    already_in_immich: u32,
+    downloaded: u32,
+    failed: u32,
+    aborted_early: bool,
+}
+
 async fn backfill(
     deps: &CameraDeps,
     tx: &mpsc::Sender<PipelineMessage>,
@@ -58,22 +69,38 @@ async fn backfill(
     shutdown: &Arc<AtomicBool>,
 ) -> Result<()> {
     let all = enumerate_files(camera).await?;
-    info!(count = all.len(), "enumerated files on camera");
+    let mut stats = BackfillStats {
+        total_files: all.len(),
+        ..Default::default()
+    };
+    info!(count = stats.total_files, "enumerated files on camera");
     let mut consecutive_failures: u32 = 0;
     for (folder, name) in all {
         if shutdown.load(Ordering::Relaxed) {
-            return Ok(());
+            break;
         }
         if !is_real_asset_name(&name) {
             debug!(folder = %folder, name = %name, "skipping non-asset filename");
+            stats.skipped_non_asset += 1;
             continue;
         }
         let result = match prefetch_and_filter(camera, &folder, &name, deps, cutoff).await {
             Ok(Some(info)) => {
-                process_one_with_info(deps, tx, ctx, camera, &folder, &name, info).await
+                let outcome = process_one_with_info(
+                    deps, tx, ctx, camera, &folder, &name, info,
+                )
+                .await;
+                if let Ok(o) = &outcome {
+                    match o {
+                        FileOutcome::Downloaded => stats.downloaded += 1,
+                        FileOutcome::AlreadyInImmich => stats.already_in_immich += 1,
+                    }
+                }
+                outcome.map(|_| ())
             }
             Ok(None) => {
-                debug!(folder = %folder, name = %name, "before cutoff, skipping");
+                debug!(folder = %folder, name = %name, "before cutoff or non-asset kind, skipping");
+                stats.skipped_before_cutoff += 1;
                 Ok(())
             }
             Err(e) => Err(e.context("file_info")),
@@ -82,17 +109,29 @@ async fn backfill(
             Ok(()) => consecutive_failures = 0,
             Err(e) => {
                 warn!(folder = %folder, name = %name, error = ?e, "file failed");
+                stats.failed += 1;
                 consecutive_failures += 1;
                 if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
                     warn!(
                         consecutive = consecutive_failures,
                         "too many consecutive failures, ending backfill early"
                     );
-                    return Ok(());
+                    stats.aborted_early = true;
+                    break;
                 }
             }
         }
     }
+    info!(
+        total = stats.total_files,
+        downloaded = stats.downloaded,
+        already_in_immich = stats.already_in_immich,
+        before_cutoff = stats.skipped_before_cutoff,
+        non_asset = stats.skipped_non_asset,
+        failed = stats.failed,
+        aborted_early = stats.aborted_early,
+        "backfill summary"
+    );
     Ok(())
 }
 
@@ -161,6 +200,11 @@ async fn prefetch_and_filter(
     Ok(Some(object_info))
 }
 
+enum FileOutcome {
+    Downloaded,
+    AlreadyInImmich,
+}
+
 async fn process_one_with_info(
     deps: &CameraDeps,
     tx: &mpsc::Sender<PipelineMessage>,
@@ -169,7 +213,7 @@ async fn process_one_with_info(
     folder: &str,
     name: &str,
     info: ObjectInfo,
-) -> Result<()> {
+) -> Result<FileOutcome> {
     let existing = deps
         .immich
         .find_existing(&info.filename, info.date_created_utc)
@@ -191,7 +235,7 @@ async fn process_one_with_info(
             },
         )
         .await;
-        return Ok(());
+        return Ok(FileOutcome::AlreadyInImmich);
     }
 
     info!(filename = %info.filename, size = info.size, "downloading");
@@ -222,7 +266,7 @@ async fn process_one_with_info(
     )
     .await;
     deps.stats.record_synced();
-    Ok(())
+    Ok(FileOutcome::Downloaded)
 }
 
 async fn emit(tx: &mpsc::Sender<PipelineMessage>, msg: PipelineMessage) {
