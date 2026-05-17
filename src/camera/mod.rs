@@ -44,6 +44,11 @@ pub async fn run(
     // the camera disappears. Prevents hot-looping reopens after a session
     // returns Ok while the camera is still plugged in.
     let mut already_synced: Option<String> = None;
+    // Port string of the camera we've already notified the user about
+    // (either start or failure). Suppresses repeat notifications when a
+    // session keeps failing on retry — the user sees one popup per
+    // plug-in cycle, not one per 5-second backoff iteration.
+    let mut notified_for: Option<String> = None;
 
     while !shutdown.load(Ordering::Relaxed) {
         let descriptors: Vec<_> = match ctx.list_cameras().await {
@@ -58,7 +63,7 @@ pub async fn run(
         let descriptor = match descriptors.into_iter().next() {
             Some(d) => d,
             None => {
-                if already_synced.take().is_some() {
+                if already_synced.take().is_some() || notified_for.take().is_some() {
                     info!("camera disconnected; ready for next sync");
                 }
                 debug!("no camera detected");
@@ -75,7 +80,10 @@ pub async fn run(
             continue;
         }
 
-        info!(model = %descriptor.model, port = %descriptor.port, "camera detected");
+        let first_attempt_this_cycle = notified_for.as_deref() != Some(&descriptor.port);
+        if first_attempt_this_cycle {
+            info!(model = %descriptor.model, port = %descriptor.port, "camera detected");
+        }
         let camera = match ctx.get_camera(&descriptor).await {
             Ok(c) => c,
             Err(e) => {
@@ -85,7 +93,10 @@ pub async fn run(
             }
         };
 
-        notifications::notify_session_start(&descriptor.model);
+        if first_attempt_this_cycle {
+            notifications::notify_session_start(&descriptor.model);
+            notified_for = Some(descriptor.port.clone());
+        }
         let session_result = session::run(&deps, &tx, &ctx, &camera, &shutdown).await;
         notifications::notify_session_end(deps.stats.take_count());
         drop(camera);
@@ -97,7 +108,9 @@ pub async fn run(
             Err(e) => {
                 let summary = format!("{e:#}");
                 warn!(error = ?e, "camera session ended with error");
-                notifications::notify_session_failure(&summary);
+                if first_attempt_this_cycle {
+                    notifications::notify_session_failure(&summary);
+                }
                 tokio::time::sleep(SESSION_ERROR_BACKOFF).await;
             }
         }
