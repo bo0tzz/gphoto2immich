@@ -538,30 +538,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fujimmich"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "chrono-tz",
- "gphoto2",
- "hex",
- "libc",
- "notify-rust",
- "reqwest",
- "serde",
- "serde_json",
- "sha1",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "wiremock",
-]
-
-[[package]]
 name = "futures"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -728,6 +704,30 @@ dependencies = [
  "libc",
  "libgphoto2_sys",
  "log",
+]
+
+[[package]]
+name = "gphoto2immich"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "chrono-tz",
+ "gphoto2",
+ "hex",
+ "libc",
+ "notify-rust",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha1",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]

@@ -24,7 +24,7 @@ fn main() -> Result<()> {
         immich = %cfg.immich_url,
         tz = %cfg.camera_tz,
         stack = cfg.stack_jpeg_raf,
-        "fujimmich starting"
+        "gphoto2immich starting"
     );
 
     let rt = tokio::runtime::Builder::new_multi_thread()

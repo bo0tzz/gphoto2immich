@@ -1,6 +1,6 @@
 [Unit]
-Description=Fujimmich — auto-sync Fujifilm cameras to Immich
-Documentation=https://github.com/bo0tzz/fujimmich
+Description=gphoto2immich — auto-sync USB-connected cameras to Immich
+Documentation=https://github.com/bo0tzz/gphoto2immich
 After=network-online.target
 Wants=network-online.target
 
@@ -8,9 +8,9 @@ Wants=network-online.target
 Type=simple
 # Config (IMMICH_URL, IMMICH_API_KEY, FUJI_TZ, optional STACK_JPEG_RAF,
 # LOG_LEVEL) is loaded from a per-user env file. Drop it at
-# ~/.config/fujimmich/env, mode 0600 — the API key is sensitive.
-EnvironmentFile=%h/.config/fujimmich/env
-ExecStart=/usr/bin/fujimmich
+# ~/.config/gphoto2immich/env, mode 0600 — the API key is sensitive.
+EnvironmentFile=%h/.config/gphoto2immich/env
+ExecStart=/usr/bin/gphoto2immich
 
 # Restart on libgphoto2/IO errors but back off so we don't hammer USB
 # when the camera is in a bad state.

@@ -1,12 +1,14 @@
-# Fujimmich
+# gphoto2immich
 
-Local desktop daemon that watches for a USB-connected Fujifilm camera and
+Local desktop daemon that watches for a USB-connected camera and
 auto-uploads new photos into an [Immich][] instance. JPEG+RAF pairs are
 stacked. Deduplication uses Immich's metadata search — no local database.
 
-Single-camera, single-Immich. Built around [libgphoto2][], so in practice it
-should work for any camera libgphoto2 supports; it's been built and shaped
-against an X-T3.
+Single-camera, single-Immich. Built around [libgphoto2][], so in principle
+it should work for any camera libgphoto2 supports; it's been built and
+shaped against a Fujifilm X-T3 and bakes in some Fuji-isms (the dedup
+search filters by `make=FUJIFILM`, the stack logic is JPEG+RAF). Adapting
+to another body that ships RAW+JPEG pairs is a small change.
 
 [Immich]: https://immich.app
 [libgphoto2]: http://gphoto.org/proj/libgphoto2/
@@ -72,13 +74,13 @@ MENU/OK → SET UP → CONNECTION SETTING → PC CONNECTION MODE → "USB Tether
 
 In Card Reader mode the camera presents as USB Mass Storage and libgphoto2
 ignores it. The CLI sanity check is `gphoto2 --auto-detect` — if that
-doesn't see the camera, neither will fujimmich.
+doesn't see the camera, neither will gphoto2immich.
 
 ### gvfs auto-mount conflict (most desktop installs)
 
 On GNOME / KDE / anything with `gvfs-gphoto2-volume-monitor` installed, the
 desktop will autoclaim the camera the instant you plug it in, and
-fujimmich will see `IoUsbClaim` errors. Easiest fix:
+gphoto2immich will see `IoUsbClaim` errors. Easiest fix:
 
 ```sh
 systemctl --user mask gvfs-gphoto2-volume-monitor.service
@@ -99,14 +101,14 @@ if it's broken.
 The repo ships a systemd **user** unit. Install + enable:
 
 ```sh
-mkdir -p ~/.config/fujimmich ~/.config/systemd/user
-cp packaging/systemd/env.example ~/.config/fujimmich/env
-chmod 600 ~/.config/fujimmich/env
-$EDITOR ~/.config/fujimmich/env   # fill in IMMICH_URL, IMMICH_API_KEY, FUJI_TZ
-cp packaging/systemd/fujimmich.service ~/.config/systemd/user/
+mkdir -p ~/.config/gphoto2immich ~/.config/systemd/user
+cp packaging/systemd/env.example ~/.config/gphoto2immich/env
+chmod 600 ~/.config/gphoto2immich/env
+$EDITOR ~/.config/gphoto2immich/env   # fill in IMMICH_URL, IMMICH_API_KEY, FUJI_TZ
+cp packaging/systemd/gphoto2immich.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now fujimmich.service
-journalctl --user -u fujimmich -f
+systemctl --user enable --now gphoto2immich.service
+journalctl --user -u gphoto2immich -f
 ```
 
 It restarts on failure (10s backoff). Notifications work because the user
@@ -122,9 +124,9 @@ cd packaging/arch
 makepkg -si
 ```
 
-That puts the binary at `/usr/bin/fujimmich` and the systemd user unit at
-`/usr/lib/systemd/user/fujimmich.service`. Per-user setup is still the env
-file at `~/.config/fujimmich/env`.
+That puts the binary at `/usr/bin/gphoto2immich` and the systemd user unit at
+`/usr/lib/systemd/user/gphoto2immich.service`. Per-user setup is still the env
+file at `~/.config/gphoto2immich/env`.
 
 ## Notifications
 

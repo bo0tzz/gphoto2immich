@@ -1,11 +1,11 @@
 # Maintainer: bo0tzz <boet@futo.org>
-pkgname=fujimmich-git
-_pkgname=fujimmich
+pkgname=gphoto2immich-git
+_pkgname=gphoto2immich
 pkgver=r0
 pkgrel=1
 pkgdesc="Auto-sync daemon for Fujifilm (and other libgphoto2) cameras into Immich"
 arch=('x86_64')
-url="https://github.com/bo0tzz/fujimmich"
+url="https://github.com/bo0tzz/gphoto2immich"
 license=('AGPL-3.0-or-later')
 depends=('libgphoto2' 'libxml2' 'gcc-libs')
 makedepends=('git' 'rust' 'cargo')
@@ -38,8 +38,8 @@ check() {
 package() {
     cd "$_pkgname"
     install -Dm755 "target/release/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
-    install -Dm644 packaging/systemd/fujimmich.service \
-        "$pkgdir/usr/lib/systemd/user/fujimmich.service"
+    install -Dm644 packaging/systemd/gphoto2immich.service \
+        "$pkgdir/usr/lib/systemd/user/gphoto2immich.service"
     install -Dm644 packaging/systemd/env.example \
         "$pkgdir/usr/share/doc/$_pkgname/env.example"
     install -Dm644 README.md "$pkgdir/usr/share/doc/$_pkgname/README.md"

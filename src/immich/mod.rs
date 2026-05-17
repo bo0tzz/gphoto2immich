@@ -34,7 +34,7 @@ impl ImmichClient {
         );
 
         let http = Client::builder()
-            .user_agent(concat!("fujimmich/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("gphoto2immich/", env!("CARGO_PKG_VERSION")))
             .default_headers(default_headers)
             .timeout(Duration::from_secs(60))
             .build()

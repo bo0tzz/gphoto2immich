@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use tracing::debug;
 
-const APP_NAME: &str = "fujimmich";
+const APP_NAME: &str = "gphoto2immich";
 
 /// Shared counter of new syncs (= files downloaded from the camera and
 /// queued for upload). The camera task both increments and drains it.
