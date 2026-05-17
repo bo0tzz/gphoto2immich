@@ -36,16 +36,16 @@ pub async fn run(
     camera: &Camera,
     shutdown: &Arc<AtomicBool>,
 ) -> Result<()> {
-    let files = enumerate_files(camera).await?;
-    info!(count = files.len(), "enumerated files on camera");
-
-    let make = detect_camera_make(camera, ctx, &files).await;
+    let make = detect_camera_make(camera).await;
     match &make {
-        Some(m) => info!(make = %m, "detected camera EXIF make"),
+        Some(m) => info!(make = %m, "detected camera manufacturer"),
         None => warn!(
-            "could not detect camera EXIF make; caching all Immich assets (slower for large libraries)"
+            "could not detect camera manufacturer; caching all Immich assets (slower for large libraries)"
         ),
     }
+
+    let files = enumerate_files(camera).await?;
+    info!(count = files.len(), "enumerated files on camera");
 
     let cache = ImmichCache::load(&deps.immich, make.as_deref())
         .await
