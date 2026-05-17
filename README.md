@@ -52,10 +52,27 @@ X-T3.
 | Var               | Required | Default | Notes                                              |
 | ----------------- | -------- | ------- | -------------------------------------------------- |
 | `IMMICH_URL`      | yes      | —       | e.g. `https://immich.example.com/`                 |
-| `IMMICH_API_KEY`  | yes      | —       | `x-api-key` header value                           |
+| `IMMICH_API_KEY`  | yes      | —       | `x-api-key` header value. See [API key permissions](#api-key-permissions) below for a minimum-scope key. |
 | `TZ`              | yes      | —       | IANA TZ the camera's clock is set to (e.g. `Europe/Amsterdam`). libgphoto2 reports mtime as camera-local wall-clock reinterpreted as Unix epoch, so we need this to get true UTC. Must be an IANA name — POSIX TZ strings like `CET-1CEST,M3.5.0,M10.5.0/3` aren't accepted. Often already set in your shell / systemd user env. |
 | `STACK_JPEG_RAF`  | no       | `true`  | Stack JPEG+RAF pairs via Immich's stacks API.      |
 | `LOG_LEVEL`       | no       | `info`  | `tracing_subscriber` env filter (`debug`, `trace`…). |
+
+## API key permissions
+
+The daemon needs **three** Immich permissions on its API key — no need
+to hand it a full-access key:
+
+| Permission     | Why we need it                                                  |
+| -------------- | --------------------------------------------------------------- |
+| `asset.read`   | `POST /api/search/metadata` (Immich cache snapshot at session start) + `GET /api/assets/{id}` (checking whether an existing JPEG is already in a stack before we'd create one) |
+| `asset.upload` | `POST /api/assets` (the multipart upload itself)                |
+| `stack.create` | `POST /api/stacks` (creating a JPEG+RAF stack)                  |
+
+In the Immich web UI: **Account Settings → API Keys → New API Key**,
+untick `all`, tick those three. Permission scoping landed in Immich
+v1.114 or so — if you're on an older release the key has to be
+all-access. Set `STACK_JPEG_RAF=false` in the env if you also want to
+drop the `stack.create` requirement.
 
 ## Running
 
