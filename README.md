@@ -69,10 +69,8 @@ to hand it a full-access key:
 | `stack.create` | `POST /api/stacks` (creating a JPEG+RAF stack)                  |
 
 In the Immich web UI: **Account Settings → API Keys → New API Key**,
-untick `all`, tick those three. Permission scoping landed in Immich
-v1.114 or so — if you're on an older release the key has to be
-all-access. Set `STACK_JPEG_RAF=false` in the env if you also want to
-drop the `stack.create` requirement.
+untick `all`, tick those three. Set `STACK_JPEG_RAF=false` in the
+env if you also want to drop the `stack.create` requirement.
 
 ## Running
 

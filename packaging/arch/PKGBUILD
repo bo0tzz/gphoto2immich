@@ -7,7 +7,7 @@ pkgdesc="Auto-sync daemon for Fujifilm (and other libgphoto2) cameras into Immic
 arch=('x86_64')
 url="https://github.com/bo0tzz/gphoto2immich"
 license=('AGPL-3.0-or-later')
-depends=('libgphoto2' 'libxml2' 'gcc-libs')
+depends=('libgphoto2' 'libxml2' 'openssl' 'gcc-libs')
 makedepends=('git' 'rust' 'cargo')
 provides=("$_pkgname")
 conflicts=("$_pkgname")
@@ -27,12 +27,6 @@ prepare() {
 build() {
     cd "$_pkgname"
     export CARGO_TARGET_DIR=target
-    # Arch's default CFLAGS include `-fno-plt`, which inlines PLT calls
-    # at the call site. ring's hand-written assembly assumes traditional
-    # PLT semantics, so its `ring_core_*` symbols end up unresolved at
-    # link time under makepkg. Strip the flag for our build only.
-    export CFLAGS="${CFLAGS//-fno-plt/}"
-    export CXXFLAGS="${CXXFLAGS//-fno-plt/}"
     cargo build --release --frozen
 }
 
