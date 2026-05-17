@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# Config (IMMICH_URL, IMMICH_API_KEY, FUJI_TZ, optional STACK_JPEG_RAF,
+# Config (IMMICH_URL, IMMICH_API_KEY, TZ, optional STACK_JPEG_RAF,
 # LOG_LEVEL) is loaded from a per-user env file. Drop it at
 # ~/.config/gphoto2immich/env, mode 0600 — the API key is sensitive.
 EnvironmentFile=%h/.config/gphoto2immich/env

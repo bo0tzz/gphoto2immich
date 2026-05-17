@@ -44,7 +44,7 @@ to another body that ships RAW+JPEG pairs is a small change.
 | ----------------- | -------- | ------- | -------------------------------------------------- |
 | `IMMICH_URL`      | yes      | —       | e.g. `https://immich.example.com/`                 |
 | `IMMICH_API_KEY`  | yes      | —       | `x-api-key` header value                           |
-| `FUJI_TZ`         | yes      | —       | IANA TZ the camera's clock is set to (e.g. `Europe/Amsterdam`). libgphoto2 reports mtime as camera-local wall-clock reinterpreted as Unix epoch, so we need this to get true UTC. |
+| `TZ`              | yes      | —       | IANA TZ the camera's clock is set to (e.g. `Europe/Amsterdam`). libgphoto2 reports mtime as camera-local wall-clock reinterpreted as Unix epoch, so we need this to get true UTC. Must be an IANA name — POSIX TZ strings like `CET-1CEST,M3.5.0,M10.5.0/3` aren't accepted. Often already set in your shell / systemd user env. |
 | `STACK_JPEG_RAF`  | no       | `true`  | Stack JPEG+RAF pairs via Immich's stacks API.      |
 | `LOG_LEVEL`       | no       | `info`  | `tracing_subscriber` env filter (`debug`, `trace`…). |
 
@@ -53,7 +53,7 @@ to another body that ships RAW+JPEG pairs is a small change.
 ```sh
 IMMICH_URL=https://immich.example.com/ \
 IMMICH_API_KEY=… \
-FUJI_TZ=Europe/Amsterdam \
+TZ=Europe/Amsterdam \
 cargo run --release
 ```
 
@@ -104,7 +104,7 @@ The repo ships a systemd **user** unit. Install + enable:
 mkdir -p ~/.config/gphoto2immich ~/.config/systemd/user
 cp packaging/systemd/env.example ~/.config/gphoto2immich/env
 chmod 600 ~/.config/gphoto2immich/env
-$EDITOR ~/.config/gphoto2immich/env   # fill in IMMICH_URL, IMMICH_API_KEY, FUJI_TZ
+$EDITOR ~/.config/gphoto2immich/env   # fill in IMMICH_URL, IMMICH_API_KEY, TZ
 cp packaging/systemd/gphoto2immich.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now gphoto2immich.service

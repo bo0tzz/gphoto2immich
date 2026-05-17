@@ -19,7 +19,7 @@ impl Config {
         Ok(Config {
             immich_url: require_var("IMMICH_URL")?,
             immich_api_key: require_var("IMMICH_API_KEY")?,
-            camera_tz: parse_tz(&require_var("FUJI_TZ")?)?,
+            camera_tz: parse_tz(&require_var("TZ")?)?,
             stack_jpeg_raf: parse_bool_env("STACK_JPEG_RAF", true)?,
         })
     }
@@ -31,7 +31,7 @@ fn require_var(name: &str) -> Result<String> {
 
 fn parse_tz(s: &str) -> Result<Tz> {
     s.parse::<Tz>()
-        .map_err(|e| anyhow!("invalid FUJI_TZ {s:?}: {e}"))
+        .map_err(|e| anyhow!("invalid TZ {s:?}: {e}"))
 }
 
 fn parse_bool_env(name: &str, default: bool) -> Result<bool> {
