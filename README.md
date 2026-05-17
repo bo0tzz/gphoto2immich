@@ -98,14 +98,6 @@ systemctl --user mask gvfs-gphoto2-volume-monitor.service
 
 (or `pkill -f gvfs-gphoto2-volume-monitor` for a one-off.)
 
-### udev permissions
-
-The `libgphoto2` Arch package installs `/usr/lib/udev/rules.d/40-libgphoto2.rules`
-that gives access to the `camera` ACL group. If `gphoto2 --auto-detect`
-needs `sudo` to see your camera, you're not in the right group. On most
-desktops you'll already be members via the seat/login session — only check
-if it's broken.
-
 ## Running as a service
 
 The repo ships a systemd **user** unit. Install + enable:
