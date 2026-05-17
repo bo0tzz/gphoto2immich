@@ -98,6 +98,20 @@ pub async fn run(
             notified_for = Some(descriptor.port.clone());
         }
         let session_result = session::run(&deps, &tx, &ctx, &camera, &shutdown).await;
+        // Wait for the pipeline to finish every upload task we enqueued
+        // before reading the sync count. Without the barrier the count
+        // reflects "downloaded and queued", not "actually landed in
+        // Immich" — uploads can fail asynchronously, and we'd otherwise
+        // report a success count for files that never made it server-
+        // side.
+        let (ack_tx, ack_rx) = tokio::sync::oneshot::channel();
+        if tx
+            .send(crate::job::PipelineMessage::Barrier(ack_tx))
+            .await
+            .is_ok()
+        {
+            let _ = ack_rx.await;
+        }
         notifications::notify_session_end(deps.stats.take_count());
         drop(camera);
         match session_result {

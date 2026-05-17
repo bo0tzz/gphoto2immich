@@ -100,7 +100,7 @@ async fn backfill(
         let result = match prefetch_and_filter(camera, &folder, &name, deps, cutoff).await {
             Ok(Some(info)) => {
                 let outcome =
-                    process_one_with_info(deps, tx, ctx, camera, cache, &folder, &name, info).await;
+                    process_one_with_info(tx, ctx, camera, cache, &folder, &name, info).await;
                 if let Ok(o) = &outcome {
                     match o {
                         FileOutcome::Downloaded => stats.downloaded += 1,
@@ -218,7 +218,6 @@ enum FileOutcome {
 
 #[allow(clippy::too_many_arguments)] // session-wide context is genuinely needed here
 async fn process_one_with_info(
-    deps: &CameraDeps,
     tx: &mpsc::Sender<PipelineMessage>,
     ctx: &Context,
     camera: &Camera,
@@ -272,7 +271,9 @@ async fn process_one_with_info(
         }),
     )
     .await;
-    deps.stats.record_synced();
+    // Counter is incremented on the pipeline side after Immich actually
+    // creates the asset — see `pipeline::upload`. Counting on the camera
+    // side here would over-report when uploads then fail.
     Ok(FileOutcome::Downloaded)
 }
 

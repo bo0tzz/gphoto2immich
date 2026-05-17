@@ -42,7 +42,7 @@ async fn run(cfg: config::Config) -> Result<()> {
         &cfg.immich_api_key,
     )?);
     let stats = notifications::SyncStats::new();
-    let pipeline = pipeline::Pipeline::new(immich.clone(), &cfg);
+    let pipeline = pipeline::Pipeline::new(immich.clone(), &cfg, stats.clone());
 
     let (tx, rx) = mpsc::channel::<job::PipelineMessage>(64);
 

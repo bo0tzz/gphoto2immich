@@ -15,6 +15,7 @@ use crate::camera::AssetKind;
 use crate::config::Config;
 use crate::immich::{ImmichClient, UploadOutcome, UploadRequest, UploadResult};
 use crate::job::{PipelineMessage, UploadJob};
+use crate::notifications::SyncStats;
 use crate::stack_tracker::{Decision, StackTracker};
 
 const UPLOAD_MAX_ATTEMPTS: u32 = 4;
@@ -26,29 +27,41 @@ pub struct Pipeline {
     client: Arc<ImmichClient>,
     stack_tracker: Arc<Mutex<StackTracker>>,
     stack_enabled: bool,
+    stats: SyncStats,
 }
 
 impl Pipeline {
-    pub fn new(client: Arc<ImmichClient>, config: &Config) -> Self {
+    pub fn new(client: Arc<ImmichClient>, config: &Config, stats: SyncStats) -> Self {
         Pipeline {
             client,
             stack_tracker: Arc::new(Mutex::new(StackTracker::new())),
             stack_enabled: config.stack_jpeg_raf,
+            stats,
         }
     }
 
     /// Drive the pipeline: read messages off `rx`, spawn each as an
-    /// independent task so uploads run concurrently. Returns when the channel
-    /// is closed and all in-flight tasks complete.
+    /// independent task so uploads run concurrently. Returns when the
+    /// channel is closed and all in-flight tasks complete.
     pub async fn run(self, mut rx: mpsc::Receiver<PipelineMessage>) {
         let mut tasks = JoinSet::new();
         while let Some(msg) = rx.recv().await {
-            let pipeline = self.clone();
-            tasks.spawn(async move {
-                if let Err(e) = pipeline.handle(msg).await {
-                    error!(error = ?e, "pipeline message failed");
+            match msg {
+                PipelineMessage::Barrier(ack) => {
+                    // Drain every previously-spawned task before acking so
+                    // the camera task can read an accurate stats counter.
+                    while tasks.join_next().await.is_some() {}
+                    let _ = ack.send(());
                 }
-            });
+                other => {
+                    let pipeline = self.clone();
+                    tasks.spawn(async move {
+                        if let Err(e) = pipeline.handle(other).await {
+                            error!(error = ?e, "pipeline message failed");
+                        }
+                    });
+                }
+            }
         }
         // Drain in-flight uploads before returning.
         while tasks.join_next().await.is_some() {}
@@ -68,6 +81,9 @@ impl Pipeline {
                 }
                 Ok(())
             }
+            // Barriers are intercepted in `run`; this arm only exists so
+            // the match is exhaustive.
+            PipelineMessage::Barrier(_) => Ok(()),
         }
     }
 
@@ -86,11 +102,14 @@ impl Pipeline {
         };
         let result = upload_with_retry(&self.client, req).await?;
         match result.outcome {
-            UploadOutcome::Created => info!(
-                asset_id = %result.asset_id,
-                filename = %info.filename,
-                "uploaded"
-            ),
+            UploadOutcome::Created => {
+                self.stats.record_synced();
+                info!(
+                    asset_id = %result.asset_id,
+                    filename = %info.filename,
+                    "uploaded"
+                );
+            }
             UploadOutcome::Duplicate => debug!(
                 asset_id = %result.asset_id,
                 filename = %info.filename,
